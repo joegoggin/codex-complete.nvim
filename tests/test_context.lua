@@ -23,6 +23,50 @@ T["captures prefix and suffix at the byte cursor"] = function()
   MiniTest.expect.equality(result.suffix, "bar\nreturn value")
 end
 
+T["captures a Tree-sitter comment as a replacement instruction"] = function()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+    "local user = query({",
+    "  -- add query",
+    "})",
+    "return user",
+  })
+  vim.api.nvim_win_set_cursor(0, { 2, 5 })
+  local result = context.capture_comment(0, 0, config.resolve())
+  MiniTest.expect.equality(result.kind, "comment")
+  MiniTest.expect.equality(result.instruction, "-- add query")
+  MiniTest.expect.equality(result.edit, { start_row = 1, start_col = 2, end_row = 1, end_col = 14 })
+  MiniTest.expect.equality(result.prefix, "local user = query({\n  ")
+  MiniTest.expect.equality(result.suffix, "\n})\nreturn user")
+end
+
+T["captures an entire multiline comment node"] = function()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+    "local value = ",
+    "--[[build a value",
+    "from the input]]",
+    "return value",
+  })
+  vim.api.nvim_win_set_cursor(0, { 3, 4 })
+  local result = context.capture_comment(0, 0, config.resolve())
+  MiniTest.expect.equality(result.instruction, "--[[build a value\nfrom the input]]")
+  MiniTest.expect.equality(result.edit, { start_row = 1, start_col = 0, end_row = 2, end_col = 16 })
+end
+
+T["rejects comment capture away from comments"] = function()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = 42" })
+  vim.api.nvim_win_set_cursor(0, { 1, 6 })
+  local result, err = context.capture_comment(0, 0, config.resolve())
+  MiniTest.expect.equality(result, nil)
+  MiniTest.expect.equality(err, "cursor is not over a comment")
+end
+
+T["reports a missing Tree-sitter parser"] = function()
+  vim.bo.filetype = "codex_complete_missing_parser"
+  local result, err = context.capture_comment(0, 0, config.resolve())
+  MiniTest.expect.equality(result, nil)
+  MiniTest.expect.equality(err, "Tree-sitter parser unavailable for this buffer")
+end
+
 T["bounds context without splitting UTF-8"] = function()
   vim.api.nvim_buf_set_lines(0, 0, -1, false, { string.rep("é", 400), string.rep("界", 400) })
   vim.api.nvim_win_set_cursor(0, { 2, 600 })

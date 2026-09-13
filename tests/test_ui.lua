@@ -71,6 +71,61 @@ T["places the cursor after a single-line insertion"] = function()
   MiniTest.expect.equality(vim.api.nvim_win_get_cursor(0), { 1, 16 })
 end
 
+T["previews and accepts a comment replacement"] = function()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = ", "  -- build value", "return value" })
+  vim.api.nvim_win_set_cursor(0, { 2, 5 })
+  local captured = {
+    kind = "comment",
+    bufnr = 0,
+    winid = 0,
+    row = 2,
+    col = 5,
+    changedtick = vim.api.nvim_buf_get_changedtick(0),
+    edit = { start_row = 1, start_col = 2, end_row = 1, end_col = 16 },
+  }
+  ui.show_replacement(captured, "make_value(\n  source\n)")
+
+  MiniTest.expect.equality(
+    vim.api.nvim_buf_get_lines(0, 0, -1, false),
+    { "local value = ", "  -- build value", "return value" }
+  )
+  local extmark = vim.api.nvim_buf_get_extmarks(0, -1, 0, -1, { details = true })[1]
+  MiniTest.expect.equality(extmark[2], 1)
+  MiniTest.expect.equality(extmark[4].virt_lines, {
+    {
+      { "  ", "Normal" },
+      { "make_value(", { "CodexCompleteSuggestionBackground", "CodexCompleteSuggestion" } },
+    },
+    { { "  source", { "CodexCompleteSuggestionBackground", "CodexCompleteSuggestion" } } },
+    { { ")", { "CodexCompleteSuggestionBackground", "CodexCompleteSuggestion" } } },
+  })
+
+  MiniTest.expect.equality(ui.accept(), true)
+  MiniTest.expect.equality(
+    vim.api.nvim_buf_get_lines(0, 0, -1, false),
+    { "local value = ", "  make_value(", "  source", ")", "return value" }
+  )
+  MiniTest.expect.equality(vim.api.nvim_win_get_cursor(0), { 4, 1 })
+end
+
+T["refuses a stale comment replacement"] = function()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "-- build value" })
+  vim.api.nvim_win_set_cursor(0, { 1, 3 })
+  local captured = {
+    kind = "comment",
+    bufnr = 0,
+    winid = 0,
+    row = 1,
+    col = 3,
+    changedtick = vim.api.nvim_buf_get_changedtick(0),
+    edit = { start_row = 0, start_col = 0, end_row = 0, end_col = 14 },
+  }
+  ui.show_replacement(captured, "make_value()")
+  vim.api.nvim_win_set_cursor(0, { 1, 4 })
+  MiniTest.expect.equality(ui.accept(), false)
+  MiniTest.expect.equality(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "-- build value" })
+end
+
 T["renders and accepts a completion around an existing delimiter"] = function()
   vim.api.nvim_buf_set_lines(0, 0, -1, false, { "call()" })
   vim.api.nvim_win_set_cursor(0, { 1, 5 })

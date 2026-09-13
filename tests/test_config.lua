@@ -15,6 +15,8 @@ T["uses documented defaults"] = function()
   MiniTest.expect.equality(value.codex.effort, "low")
   MiniTest.expect.equality(value.keymaps.accept, "<M-;>")
   MiniTest.expect.equality(value.keymaps.trigger, "<M-s>")
+  MiniTest.expect.equality(value.keymaps.comment_trigger, "<leader>ac")
+  MiniTest.expect.equality(value.keymaps.comment_accept, "<M-;>")
   MiniTest.expect.equality(value.keymaps.dismiss, false)
   MiniTest.expect.equality(value.keymaps.toggle, "<leader>at")
   MiniTest.expect.equality(value.keymaps.select_model, "<leader>am")
@@ -23,8 +25,16 @@ end
 
 T["validates optional action keymaps"] = function()
   local value = config.resolve({
-    keymaps = { toggle = false, select_model = false, select_effort = "<leader>x" },
+    keymaps = {
+      comment_trigger = false,
+      comment_accept = "<leader>x",
+      toggle = false,
+      select_model = false,
+      select_effort = "<leader>x",
+    },
   })
+  MiniTest.expect.equality(value.keymaps.comment_trigger, false)
+  MiniTest.expect.equality(value.keymaps.comment_accept, "<leader>x")
   MiniTest.expect.equality(value.keymaps.toggle, false)
   MiniTest.expect.equality(value.keymaps.select_model, false)
   MiniTest.expect.equality(value.keymaps.select_effort, "<leader>x")
@@ -38,6 +48,12 @@ T["validates optional action keymaps"] = function()
   MiniTest.expect.error(function()
     config.resolve({ keymaps = { toggle = 42 } })
   end, "keymaps.toggle")
+  MiniTest.expect.error(function()
+    config.resolve({ keymaps = { comment_trigger = 42 } })
+  end, "keymaps.comment_trigger")
+  MiniTest.expect.error(function()
+    config.resolve({ keymaps = { comment_accept = {} } })
+  end, "keymaps.comment_accept")
 end
 
 T["validates the configured default model"] = function()

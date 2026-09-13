@@ -106,6 +106,7 @@ function M.capture(bufnr, winid, config)
   prefix = utf8_tail(prefix, config.context.max_bytes - #suffix)
 
   return {
+    kind = "completion",
     bufnr = bufnr,
     winid = winid,
     row = row,
@@ -115,6 +116,88 @@ function M.capture(bufnr, winid, config)
     filetype = vim.bo[bufnr].filetype,
     prefix = prefix,
     suffix = suffix,
+  }
+end
+
+local function comment_node_at(bufnr, row, col)
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
+  if not ok or not parser then
+    return nil, "Tree-sitter parser unavailable for this buffer"
+  end
+  local parsed, trees = pcall(function()
+    return parser:parse()
+  end)
+  if not parsed or not trees or not trees[1] then
+    return nil, "Could not parse the buffer with Tree-sitter"
+  end
+
+  local node = trees[1]:root():named_descendant_for_range(row, col, row, col)
+  local comment
+  while node do
+    if node:type():find("comment", 1, true) then
+      comment = node
+    elseif comment then
+      break
+    end
+    node = node:parent()
+  end
+  if not comment then
+    return nil, "cursor is not over a comment"
+  end
+  return comment
+end
+
+function M.capture_comment(bufnr, winid, config)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  winid = winid or vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_cursor(winid)
+  local row, col = cursor[1], cursor[2]
+  local node, node_error = comment_node_at(bufnr, row - 1, col)
+  if not node then
+    return nil, node_error
+  end
+
+  local start_row, start_col, end_row, end_col = node:range()
+  local comment_lines = vim.api.nvim_buf_get_text(bufnr, start_row, start_col, end_row, end_col, {})
+  local instruction = table.concat(comment_lines, "\n")
+  if instruction == "" then
+    return nil, "comment is empty"
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  local before_start = math.max(0, start_row - config.context.before_lines)
+  local before = vim.api.nvim_buf_get_lines(bufnr, before_start, start_row + 1, false)
+  before[#before] = (before[#before] or ""):sub(1, start_col)
+
+  local after_end = math.min(line_count, end_row + config.context.after_lines + 1)
+  local end_line = vim.api.nvim_buf_get_lines(bufnr, end_row, end_row + 1, false)[1] or ""
+  local after = { end_line:sub(end_col + 1) }
+  vim.list_extend(after, vim.api.nvim_buf_get_lines(bufnr, end_row + 1, after_end, false))
+
+  local prefix = table.concat(before, "\n")
+  local suffix = table.concat(after, "\n")
+  local suffix_budget = math.floor(config.context.max_bytes / 3)
+  suffix = utf8_head(suffix, suffix_budget)
+  prefix = utf8_tail(prefix, config.context.max_bytes - #suffix)
+
+  return {
+    kind = "comment",
+    bufnr = bufnr,
+    winid = winid,
+    row = row,
+    col = col,
+    changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+    filename = vim.api.nvim_buf_get_name(bufnr),
+    filetype = vim.bo[bufnr].filetype,
+    prefix = prefix,
+    suffix = suffix,
+    instruction = instruction,
+    edit = {
+      start_row = start_row,
+      start_col = start_col,
+      end_row = end_row,
+      end_col = end_col,
+    },
   }
 end
 

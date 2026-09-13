@@ -33,6 +33,8 @@ The default insert-mode mappings are:
 
 The default normal-mode mappings are:
 
+  <leader>ac  Generate code from the comment under the cursor.
+  <M-;>       Accept a comment replacement.
   <leader>at  Toggle suggestions.
   <leader>am  Select the completion model.
   <leader>ar  Select the reasoning level.
@@ -72,6 +74,18 @@ suggestion around the existing closer without starting a request.
 Every setup option and its default is documented in the project README.
 Mappings can be replaced with strings or disabled with `false`.
 
+Place the cursor on a comment and press <leader>ac to generate a replacement,
+or run :CodexCompleteComment. The full Tree-sitter comment node is sent as the
+instruction, and highlighted replacement text is previewed below the comment
+without changing the buffer. Press normal-mode <M-;> to replace the comment.
+Moving the cursor or editing the buffer invalidates the preview.
+
+This action requires a Tree-sitter parser for the current buffer. It warns and
+does not send a request when no parser is available or the cursor is not over a
+comment. Comment replacements are explicit only and are not added to the
+automatic-completion cache. Configure the mappings with
+keymaps.comment_trigger and keymaps.comment_accept.
+
 The built-in defaults use gpt-5.6-luna with low reasoning. Set codex.model or
 codex.effort to override either value. Runtime selections last for the current
 Neovim session and are reset whenever setup() runs again.
@@ -86,6 +100,10 @@ and effort changes cancel and clear older suggestions.
 
                                                     *:CodexComplete*
 :CodexComplete              Request a completion immediately.
+
+                                                    *:CodexCompleteComment*
+:CodexCompleteComment       Generate code from the Tree-sitter comment under
+                            the cursor. The Lua function is trigger_comment().
 
                                                     *:CodexCompleteEnable*
 :CodexCompleteEnable        Enable completion requests.
@@ -139,8 +157,9 @@ lualine component options can customize its presentation.
 5. Privacy                                           *codex-complete-privacy*
 
 Only bounded text from the current buffer, its filename, filetype, and cursor
-position are included in requests. Other buffers and repository files are not
-sent. Sensitive filenames are blocked. Completion threads are ephemeral and
-tool-free, with read-only sandboxing and approvals disabled.
+position are included in requests. Comment replacement requests additionally
+include the raw comment text and its range. Other buffers and repository files
+are not sent. Sensitive filenames are blocked. Completion threads are
+ephemeral and tool-free, with read-only sandboxing and approvals disabled.
 
 vim:tw=78:ts=8:noet:ft=help:norl:

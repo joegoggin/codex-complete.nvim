@@ -60,6 +60,8 @@ Run the health check after installation:
 | --- | --- | --- |
 | `Alt-;` (`<M-;>`) | Insert | Accept the current suggestion |
 | `Alt-s` (`<M-s>`) | Insert | Request a suggestion manually |
+| `<leader>ac` | Normal | Generate code from the comment under the cursor |
+| `Alt-;` (`<M-;>`) | Normal | Accept a comment replacement |
 | `<leader>at` | Normal | Toggle suggestions |
 | `<leader>am` | Normal | Select the completion model |
 | `<leader>ar` | Normal | Select the reasoning level |
@@ -90,6 +92,21 @@ Common auto-paired closing delimiters are treated as part of the cached
 suggestion. While the cursor remains inside a generated `()`, `[]`, or `{}`
 pair, the plugin shows the full remaining suggestion around the existing
 closing delimiter without starting a request.
+
+### Generate code from a comment
+
+Place the cursor on a comment and press `<leader>ac`, or run
+`:CodexCompleteComment`. The complete Tree-sitter comment node is used as an
+instruction, so line comments and multiline block comments are supported. The
+generated replacement is shown as highlighted virtual lines below the comment;
+the buffer is unchanged until you accept it with normal-mode `<M-;>`.
+
+Acceptance replaces the whole comment node and leaves surrounding whitespace
+and code untouched. Editing the buffer or moving the cursor invalidates the
+preview. This action requires a Tree-sitter parser for the current buffer and
+reports a warning when the cursor is not on a comment or no parser is
+available. Comment replacements are requested only explicitly and are not
+stored in the automatic-completion cache.
 
 ## Configuration
 
@@ -124,6 +141,8 @@ require("codex_complete").setup({
   keymaps = {
     accept = "<M-;>",
     trigger = "<M-s>",
+    comment_trigger = "<leader>ac",
+    comment_accept = "<M-;>",
     dismiss = false,
     toggle = "<leader>at",
     select_model = "<leader>am",
@@ -157,6 +176,7 @@ advertised default. Model and effort changes cancel and clear older suggestions.
 | Command | Lua function | Purpose |
 | --- | --- | --- |
 | `:CodexComplete` | `trigger()` | Request a completion now |
+| `:CodexCompleteComment` | `trigger_comment()` | Generate code from the comment under the cursor |
 | `:CodexCompleteEnable` | `enable()` | Enable requests |
 | `:CodexCompleteDisable` | `disable()` | Cancel work and disable requests |
 | `:CodexCompleteToggle` | `toggle()` | Toggle request handling |
@@ -168,7 +188,8 @@ advertised default. Model and effort changes cancel and clear older suggestions.
 | `:CodexCompleteEffort {level}` | `set_effort(level)` | Validate and select an effort |
 | `:CodexCompleteEffort!` | `reset_effort()` | Restore the configured default effort |
 
-`accept()` inserts a visible suggestion, while `status()` returns current
+`accept()` inserts a visible completion or applies a visible comment
+replacement, while `status()` returns current
 plugin, process, request, model, reasoning-effort, loading-indicator, and error
 state.
 `list_models(callback)` retrieves the visible Codex model catalog and calls
@@ -195,7 +216,9 @@ lualine's standard component options can customize its presentation.
 ## Privacy and safety
 
 - Only the configured prefix and suffix from the current buffer are placed in a
-  completion prompt. Other buffers and repository files are not included.
+  completion prompt. Comment requests also include the selected raw comment
+  text and its replacement range. Other buffers and repository files are not
+  included.
 - Completion threads are ephemeral, run with a read-only sandbox and approval
   policy of `never`, and are instructed not to call tools.
 - The app server runs from Neovim's cache directory rather than the repository.

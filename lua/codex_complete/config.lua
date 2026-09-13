@@ -28,6 +28,8 @@ local defaults = {
   keymaps = {
     accept = "<M-;>",
     trigger = "<M-s>",
+    comment_trigger = "<leader>ac",
+    comment_accept = "<M-;>",
     dismiss = false,
     toggle = "<leader>at",
     select_model = "<leader>am",
@@ -209,6 +211,8 @@ function M.resolve(opts)
 
   validate_optional_keymap("accept", value.keymaps.accept)
   validate_optional_keymap("trigger", value.keymaps.trigger)
+  validate_optional_keymap("comment_trigger", value.keymaps.comment_trigger)
+  validate_optional_keymap("comment_accept", value.keymaps.comment_accept)
   validate_optional_keymap("dismiss", value.keymaps.dismiss)
   validate_optional_keymap("toggle", value.keymaps.toggle)
   validate_optional_keymap("select_model", value.keymaps.select_model)

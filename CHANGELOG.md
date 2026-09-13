@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Tree-sitter comment prompts with explicit normal-mode triggering, virtual
+  replacement previews, and atomic acceptance over the comment range.
 - A built-in lualine component showing enabled status, active model, and
   reasoning effort.
 - Configurable normal-mode mappings for toggling suggestions and opening the

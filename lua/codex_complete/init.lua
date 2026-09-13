@@ -82,6 +82,41 @@ function M.trigger(options)
   return true
 end
 
+function M.trigger_comment()
+  if not state.configured then
+    notify("Call require('codex_complete').setup() before requesting comment replacements", vim.log.levels.ERROR)
+    return false
+  end
+  if not state.enabled then
+    notify("Codex completions are disabled", vim.log.levels.WARN)
+    return false
+  end
+  if vim.api.nvim_get_mode().mode:sub(1, 1) ~= "n" then
+    notify("Comment replacements are only available in normal mode", vim.log.levels.WARN)
+    return false
+  end
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local eligible, reason = context.eligible(bufnr, state.config, true)
+  if not eligible then
+    notify("Comment replacement unavailable: " .. reason, vim.log.levels.WARN)
+    return false
+  end
+  local captured, capture_error = context.capture_comment(bufnr, vim.api.nvim_get_current_win(), state.config)
+  if not captured then
+    notify("Comment replacement unavailable: " .. capture_error, vim.log.levels.WARN)
+    return false
+  end
+
+  cancel_work()
+  ui.dismiss()
+  if state.config.loading_indicator then
+    ui.show_loading(captured)
+  end
+  state.engine:request(captured, true)
+  return true
+end
+
 function M.accept()
   local visible = ui.current()
   local accepted = ui.accept()
@@ -490,6 +525,7 @@ local function create_commands()
     CodexComplete = function()
       M.trigger({ manual = true })
     end,
+    CodexCompleteComment = M.trigger_comment,
     CodexCompleteEnable = M.enable,
     CodexCompleteDisable = M.disable,
     CodexCompleteToggle = M.toggle,
@@ -549,6 +585,12 @@ function M.setup(options)
       ui.dismiss(captured.bufnr)
     end,
     on_completion = function(captured, completion)
+      if captured.kind == "comment" then
+        ui.show_replacement(captured, completion, {
+          highlights = state.config.highlights,
+        })
+        return
+      end
       local reconciled, paired_delimiter = context.reconcile_completion(captured, completion)
       if reconciled == "" then
         return
@@ -575,6 +617,17 @@ function M.setup(options)
   vim.api.nvim_create_autocmd({ "TextChangedI", "TextChangedP", "CursorMovedI" }, {
     group = group,
     callback = schedule_auto,
+  })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = group,
+    callback = function()
+      local active = state.engine and state.engine.active
+      local current = ui.current() or ui.loading() or active
+      if current and current.context.kind == "comment" and not context.is_current(current.context) then
+        cancel_work()
+        ui.dismiss()
+      end
+    end,
   })
   vim.api.nvim_create_autocmd({ "InsertLeave", "BufLeave", "BufDelete", "TextChanged" }, {
     group = group,
@@ -606,6 +659,15 @@ function M.setup(options)
     M.trigger({ manual = true })
   end, "Request Codex completion")
   set_mapping("i", state.config.keymaps.dismiss, M.dismiss, "Dismiss Codex completion")
+  set_mapping("n", state.config.keymaps.comment_trigger, function()
+    M.trigger_comment()
+  end, "Generate code from comment")
+  set_mapping("n", state.config.keymaps.comment_accept, function()
+    if not M.accept() then
+      local keys = vim.api.nvim_replace_termcodes(state.config.keymaps.comment_accept, true, false, true)
+      vim.api.nvim_feedkeys(keys, "n", false)
+    end
+  end, "Accept Codex comment replacement")
   set_mapping("n", state.config.keymaps.toggle, function()
     M.toggle()
   end, "Toggle Codex suggestions")

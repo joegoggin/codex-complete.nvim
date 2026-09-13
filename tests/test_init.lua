@@ -56,8 +56,11 @@ local T = MiniTest.new_set({
 })
 
 T["installs the default mappings"] = function()
+  MiniTest.expect.equality(vim.fn.exists(":CodexCompleteComment"), 2)
   MiniTest.expect.equality(vim.fn.maparg("<M-;>", "i") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<M-s>", "i") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>ac", "n") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<M-;>", "n") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<leader>at", "n") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<leader>am", "n") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<leader>ar", "n") ~= "", true)
@@ -66,6 +69,56 @@ T["installs the default mappings"] = function()
   MiniTest.expect.equality(vim.fn.maparg("<leader>ar", "i"), "")
   MiniTest.expect.equality(vim.fn.maparg("<M-q>", "i"), "")
   MiniTest.expect.equality(vim.fn.maparg("<M-Tab>", "i"), "")
+end
+
+T["comment mappings trigger and accept replacements"] = function()
+  plugin.setup({ auto_trigger = false, codex = { command = python_command(), timeout_ms = 5000 } })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = ", "  -- build value", "return value" })
+  vim.api.nvim_win_set_cursor(0, { 2, 5 })
+
+  local trigger_mapping = vim.fn.maparg("<leader>ac", "n", false, true)
+  local accept_mapping = vim.fn.maparg("<M-;>", "n", false, true)
+  MiniTest.expect.equality(trigger_mapping.desc, "Generate code from comment")
+  MiniTest.expect.equality(accept_mapping.desc, "Accept Codex comment replacement")
+  trigger_mapping.callback()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return plugin.status().suggestion_visible or plugin.status().engine.last_error ~= nil
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().engine.last_error, nil)
+  MiniTest.expect.equality(plugin._state.cache[0], nil)
+  accept_mapping.callback()
+  MiniTest.expect.equality(
+    vim.api.nvim_buf_get_lines(0, 0, -1, false),
+    { "local value = ", "   world", "next_line()", "return value" }
+  )
+end
+
+T["comment trigger reports when the cursor is not on a comment"] = function()
+  local notification
+  vim.notify = function(message)
+    notification = message
+  end
+  MiniTest.expect.equality(plugin.trigger_comment(), false)
+  MiniTest.expect.equality(notification, "Comment replacement unavailable: cursor is not over a comment")
+end
+
+T["cursor movement cancels a comment request without a loading indicator"] = function()
+  plugin.setup({
+    auto_trigger = false,
+    loading_indicator = false,
+    codex = { command = python_command("--delay"), timeout_ms = 5000 },
+  })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "-- build value" })
+  vim.api.nvim_win_set_cursor(0, { 1, 3 })
+  MiniTest.expect.equality(plugin.trigger_comment(), true)
+  MiniTest.expect.equality(plugin.status().engine.active, true)
+  vim.api.nvim_win_set_cursor(0, { 1, 4 })
+  vim.api.nvim_exec_autocmds("CursorMoved", {})
+  MiniTest.expect.equality(plugin.status().engine.active, false)
+  MiniTest.expect.equality(plugin.status().suggestion_visible, false)
 end
 
 T["toggle mapping changes suggestion handling state"] = function()
@@ -101,18 +154,36 @@ end
 T["replaces and disables normal-mode action mappings on setup"] = function()
   plugin.setup({
     auto_trigger = false,
-    keymaps = { toggle = "<leader>xt", select_model = "<leader>xm", select_effort = false },
+    keymaps = {
+      comment_trigger = "<leader>xc",
+      comment_accept = "<leader>xa",
+      toggle = "<leader>xt",
+      select_model = "<leader>xm",
+      select_effort = false,
+    },
   })
+  MiniTest.expect.equality(vim.fn.maparg("<leader>ac", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<M-;>", "n"), "")
   MiniTest.expect.equality(vim.fn.maparg("<leader>at", "n"), "")
   MiniTest.expect.equality(vim.fn.maparg("<leader>am", "n"), "")
   MiniTest.expect.equality(vim.fn.maparg("<leader>ar", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xc", "n") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xa", "n") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<leader>xt", "n") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<leader>xm", "n") ~= "", true)
 
   plugin.setup({
     auto_trigger = false,
-    keymaps = { toggle = false, select_model = false, select_effort = "<leader>xr" },
+    keymaps = {
+      comment_trigger = false,
+      comment_accept = false,
+      toggle = false,
+      select_model = false,
+      select_effort = "<leader>xr",
+    },
   })
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xc", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xa", "n"), "")
   MiniTest.expect.equality(vim.fn.maparg("<leader>xt", "n"), "")
   MiniTest.expect.equality(vim.fn.maparg("<leader>xm", "n"), "")
   MiniTest.expect.equality(vim.fn.maparg("<leader>xr", "n") ~= "", true)

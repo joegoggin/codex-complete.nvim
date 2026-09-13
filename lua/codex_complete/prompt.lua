@@ -1,11 +1,13 @@
 local M = {}
 
 M.developer_instructions = table.concat({
-  "You are an inline code completion engine.",
+  "You are an inline code completion and comment-to-code engine.",
   "Never call tools, inspect files, run commands, or ask questions.",
   "Use only the JSON context in the user message.",
   "Return a JSON object with one field named completion.",
-  "The completion must contain only the exact text to insert at the cursor.",
+  "For kind completion, the completion must contain only the exact text to insert at the cursor.",
+  "For kind comment, treat instruction as a request and return only the exact code that replaces that comment.",
+  "Never include comment delimiters from the instruction in a comment replacement.",
   "Do not repeat the prefix or suffix, and do not use Markdown fences.",
   "Prefer a concise, idiomatic continuation. Return an empty string when no useful completion is clear.",
 }, " ")
@@ -20,13 +22,22 @@ M.output_schema = {
 }
 
 function M.build(context)
-  return vim.json.encode({
+  local payload = {
+    kind = context.kind or "completion",
     filename = context.filename,
     filetype = context.filetype,
     cursor = { line = context.row, byte_column = context.col },
     prefix = context.prefix,
     suffix = context.suffix,
-  })
+  }
+  if context.kind == "comment" then
+    payload.instruction = context.instruction
+    payload.replacement = {
+      start = { line = context.edit.start_row + 1, byte_column = context.edit.start_col },
+      finish = { line = context.edit.end_row + 1, byte_column = context.edit.end_col },
+    }
+  end
+  return vim.json.encode(payload)
 end
 
 local function remove_fence(value)

@@ -184,6 +184,34 @@ function M.show(context, completion, options)
   }
 end
 
+function M.show_replacement(context, completion, options)
+  M.dismiss()
+  options = options or {}
+  local highlights = options.highlights or default_highlights
+  local chunks = completion_chunks(completion, highlights)
+  local source_line = vim.api.nvim_buf_get_lines(
+    context.bufnr,
+    context.edit.start_row,
+    context.edit.start_row + 1,
+    false
+  )[1] or ""
+  local prefix_width = vim.fn.strdisplaywidth(source_line:sub(1, context.edit.start_col))
+  if prefix_width > 0 then
+    table.insert(chunks[1], 1, { string.rep(" ", prefix_width), "Normal" })
+  end
+  local line_count = vim.api.nvim_buf_line_count(context.bufnr)
+  local preview_row = math.min(context.edit.end_row, line_count - 1)
+  vim.api.nvim_buf_set_extmark(context.bufnr, namespace, preview_row, 0, {
+    virt_lines = chunks,
+    virt_lines_above = false,
+  })
+  suggestion = {
+    context = context,
+    completion = completion,
+    range = context.edit,
+  }
+end
+
 function M.accept()
   if not suggestion then
     return false
@@ -197,18 +225,25 @@ function M.accept()
 
   local parts = lines(current.completion)
   M.dismiss()
+  local range = current.range
+    or {
+      start_row = current.context.row - 1,
+      start_col = current.context.col,
+      end_row = current.context.row - 1,
+      end_col = current.context.col + current.replace_length,
+    }
   vim.api.nvim_buf_set_text(
     current.context.bufnr,
-    current.context.row - 1,
-    current.context.col,
-    current.context.row - 1,
-    current.context.col + current.replace_length,
+    range.start_row,
+    range.start_col,
+    range.end_row,
+    range.end_col,
     parts
   )
   if vim.api.nvim_win_is_valid(current.context.winid) then
-    local target_col = #parts == 1 and current.context.col + #parts[1] or #parts[#parts]
+    local target_col = #parts == 1 and range.start_col + #parts[1] or #parts[#parts]
     vim.api.nvim_win_set_cursor(current.context.winid, {
-      current.context.row + #parts - 1,
+      range.start_row + #parts,
       target_col,
     })
   end
