@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: JohnnyMorganz/stylua-action@v5.0.0
+        with:
+          version: v2.5.2
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --check lua plugin tests
+      - name: Install Selene
+        run: cargo install selene --version 0.31.0 --locked
+      - name: Static analysis
+        run: selene lua plugin tests
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        neovim: [v0.10.4, stable, nightly]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: rhysd/action-setup-vim@v1.6.1
+        with:
+          version: ${{ matrix.neovim }}
+          neovim: true
+      - name: Install test dependency
+        shell: bash
+        run: git clone --depth 1 --branch v0.18.0 https://github.com/nvim-mini/mini.nvim.git .deps/mini.nvim
+      - name: Run headless tests
+        shell: bash
+        run: nvim --headless --noplugin -u tests/minimal_init.lua -c 'lua MiniTest.run()'
