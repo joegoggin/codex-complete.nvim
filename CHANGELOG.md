@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- A built-in lualine component showing enabled status, active model, and
+  reasoning effort.
 - Configurable normal-mode mappings for toggling suggestions and opening the
   model and reasoning-effort pickers.
 - Runtime model and reasoning-effort selection with pickers, direct commands,

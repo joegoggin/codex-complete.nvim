@@ -23,6 +23,10 @@ local function notify(message, level)
   end
 end
 
+local function redraw_statusline()
+  vim.cmd.redrawstatus()
+end
+
 local function stop_timer()
   state.schedule_generation = state.schedule_generation + 1
   if state.timer then
@@ -100,6 +104,7 @@ function M.enable()
     return false
   end
   state.enabled = true
+  redraw_statusline()
   return true
 end
 
@@ -110,6 +115,7 @@ function M.disable()
   state.enabled = false
   cancel_work()
   ui.dismiss()
+  redraw_statusline()
   return true
 end
 
@@ -136,6 +142,7 @@ local function apply_runtime(model, effort)
     state.cache = {}
     state.engine:set_model(model)
     state.engine:set_effort(effort)
+    redraw_statusline()
   end
   return true
 end
@@ -608,6 +615,7 @@ function M.setup(options)
   set_mapping("n", state.config.keymaps.select_effort, function()
     M.select_effort()
   end, "Select Codex reasoning effort")
+  redraw_statusline()
   return M
 end
 

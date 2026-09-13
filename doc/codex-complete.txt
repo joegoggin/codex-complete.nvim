@@ -6,7 +6,8 @@ CONTENTS                                             *codex-complete-contents*
 1. Introduction                                  |codex-complete-introduction|
 2. Setup                                                |codex-complete-setup|
 3. Commands                                          |codex-complete-commands|
-4. Privacy                                            |codex-complete-privacy|
+4. Lualine                                            |codex-complete-lualine|
+5. Privacy                                            |codex-complete-privacy|
 
 ==============================================================================
 1. Introduction                                 *codex-complete-introduction*
@@ -120,7 +121,22 @@ model's advertised effort options. status().effort contains current and
 default fields.
 
 ==============================================================================
-4. Privacy                                           *codex-complete-privacy*
+4. Lualine                                           *codex-complete-lualine*
+
+Add the built-in codex_complete component to any lualine.nvim section: >lua
+
+  require("lualine").setup({
+    sections = {
+      lualine_x = { "codex_complete" },
+    },
+  })
+<
+The component shows whether completions are enabled, followed by the active
+model and reasoning effort. It has no icon or Nerd Font requirement. Standard
+lualine component options can customize its presentation.
+
+==============================================================================
+5. Privacy                                           *codex-complete-privacy*
 
 Only bounded text from the current buffer, its filename, filetype, and cursor
 position are included in requests. Other buffers and repository files are not

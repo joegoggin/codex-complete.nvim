@@ -175,6 +175,23 @@ state.
 `callback(error, models)` when it completes. `list_efforts(callback)` similarly
 returns the active model's supported reasoning efforts.
 
+## Lualine
+
+Add the built-in `codex_complete` component to any
+[lualine.nvim](https://github.com/nvim-lualine/lualine.nvim) section:
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_x = { "codex_complete" },
+  },
+})
+```
+
+The component shows whether completions are enabled, followed by the active
+model and reasoning effort. It has no icon or Nerd Font requirement, and
+lualine's standard component options can customize its presentation.
+
 ## Privacy and safety
 
 - Only the configured prefix and suffix from the current buffer are placed in a
