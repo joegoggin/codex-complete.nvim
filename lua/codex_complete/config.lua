@@ -21,7 +21,7 @@ local defaults = {
   },
   codex = {
     command = "codex",
-    model = nil,
+    model = "gpt-5.6-luna",
     effort = "low",
     timeout_ms = 30 * 1000,
   },
@@ -29,6 +29,9 @@ local defaults = {
     accept = "<M-;>",
     trigger = "<M-s>",
     dismiss = false,
+    toggle = "<leader>at",
+    select_model = "<leader>am",
+    select_effort = "<leader>ar",
   },
   filetypes = {
     allow = {
@@ -186,11 +189,11 @@ function M.resolve(opts)
   elseif value.codex.command == "" then
     error("codex-complete: codex.command must not be empty")
   end
-  if value.codex.model ~= nil and type(value.codex.model) ~= "string" then
-    error("codex-complete: codex.model must be a string or nil")
+  if value.codex.model ~= nil and (type(value.codex.model) ~= "string" or value.codex.model == "") then
+    error("codex-complete: codex.model must be a non-empty string or nil")
   end
-  if type(value.codex.effort) ~= "string" then
-    error("codex-complete: codex.effort must be a string")
+  if type(value.codex.effort) ~= "string" or value.codex.effort == "" then
+    error("codex-complete: codex.effort must be a non-empty string")
   end
   if value.is_eligible ~= nil and type(value.is_eligible) ~= "function" then
     error("codex-complete: is_eligible must be a function or nil")
@@ -207,6 +210,9 @@ function M.resolve(opts)
   validate_optional_keymap("accept", value.keymaps.accept)
   validate_optional_keymap("trigger", value.keymaps.trigger)
   validate_optional_keymap("dismiss", value.keymaps.dismiss)
+  validate_optional_keymap("toggle", value.keymaps.toggle)
+  validate_optional_keymap("select_model", value.keymaps.select_model)
+  validate_optional_keymap("select_effort", value.keymaps.select_effort)
   return value
 end
 

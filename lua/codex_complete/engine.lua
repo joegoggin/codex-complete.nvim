@@ -12,6 +12,8 @@ function Engine.new(config, callbacks)
     generation = 0,
     active = nil,
     last_error = nil,
+    model = config.codex.model,
+    effort = config.codex.effort,
   }, Engine)
   self.client = Client.new({
     command = config.codex.command,
@@ -82,8 +84,8 @@ function Engine:_start_turn(request)
     developerInstructions = prompt.developer_instructions,
     serviceName = "codex-complete.nvim",
   }
-  if self.config.codex.model then
-    thread_params.model = self.config.codex.model
+  if self.model then
+    thread_params.model = self.model
   end
 
   self.client:request("thread/start", thread_params, function(err, result)
@@ -104,12 +106,12 @@ function Engine:_start_turn(request)
       threadId = request.thread_id,
       input = { { type = "text", text = prompt.build(request.context) } },
       approvalPolicy = "never",
-      effort = self.config.codex.effort,
+      effort = self.effort,
       outputSchema = prompt.output_schema,
       sandboxPolicy = { type = "readOnly", networkAccess = false },
     }
-    if self.config.codex.model then
-      turn_params.model = self.config.codex.model
+    if self.model then
+      turn_params.model = self.model
     end
     self.client:request("turn/start", turn_params, function(turn_err, turn_result)
       if not self:_is_active(request) then
@@ -125,6 +127,102 @@ function Engine:_start_turn(request)
       end
     end)
   end)
+end
+
+function Engine:list_models(options, callback)
+  if type(options) == "function" then
+    callback = options
+    options = {}
+  end
+  options = options or {}
+  local models = {}
+  local model_ids = {}
+  local cursors = {}
+
+  local function request_page(cursor)
+    local params = { limit = 100, includeHidden = options.include_hidden == true }
+    if cursor then
+      params.cursor = cursor
+    end
+    self.client:request("model/list", params, function(err, result)
+      if err then
+        callback("Could not list Codex models: " .. err)
+        return
+      end
+      if type(result) ~= "table" or type(result.data) ~= "table" then
+        callback("Codex app-server returned an invalid model list")
+        return
+      end
+      for _, model in ipairs(result.data) do
+        if
+          type(model) ~= "table"
+          or type(model.id) ~= "string"
+          or model.id == ""
+          or type(model.model) ~= "string"
+          or model.model == ""
+          or type(model.displayName) ~= "string"
+          or model.displayName == ""
+          or type(model.hidden) ~= "boolean"
+          or type(model.isDefault) ~= "boolean"
+          or type(model.defaultReasoningEffort) ~= "string"
+          or model.defaultReasoningEffort == ""
+          or type(model.supportedReasoningEfforts) ~= "table"
+        then
+          callback("Codex app-server returned an invalid model entry")
+          return
+        end
+        local supported = {}
+        for _, effort in ipairs(model.supportedReasoningEfforts) do
+          if
+            type(effort) ~= "table"
+            or type(effort.reasoningEffort) ~= "string"
+            or effort.reasoningEffort == ""
+            or type(effort.description) ~= "string"
+          then
+            callback("Codex app-server returned invalid reasoning-effort metadata")
+            return
+          end
+          supported[effort.reasoningEffort] = true
+        end
+        if not supported[model.defaultReasoningEffort] then
+          callback("Codex app-server returned an unsupported default reasoning effort")
+          return
+        end
+        if (options.include_hidden or model.hidden ~= true) and not model_ids[model.model] then
+          models[#models + 1] = model
+          model_ids[model.model] = true
+        end
+      end
+
+      local next_cursor = result.nextCursor
+      if next_cursor == nil or next_cursor == vim.NIL then
+        callback(nil, models)
+        return
+      end
+      if type(next_cursor) ~= "string" or next_cursor == "" or cursors[next_cursor] then
+        callback("Codex app-server returned an invalid model-list cursor")
+        return
+      end
+      cursors[next_cursor] = true
+      request_page(next_cursor)
+    end)
+  end
+
+  self.client:start(function(err)
+    if err then
+      callback(err)
+      return
+    end
+    request_page(nil)
+  end)
+end
+
+function Engine:set_model(model)
+  self.model = model
+end
+
+function Engine:set_effort(effort)
+  self.effort = effort
 end
 
 function Engine:request(captured_context, manual)
@@ -244,6 +342,8 @@ function Engine:status()
     active = self.active ~= nil,
     generation = self.generation,
     last_error = self.last_error,
+    model = self.model,
+    effort = self.effort,
     client = self.client:status(),
   }
 end

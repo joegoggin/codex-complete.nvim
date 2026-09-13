@@ -30,6 +30,12 @@ The default insert-mode mappings are:
   <M-;>      Accept a suggestion.
   <M-s>      Request a suggestion manually.
 
+The default normal-mode mappings are:
+
+  <leader>at  Toggle suggestions.
+  <leader>am  Select the completion model.
+  <leader>ar  Select the reasoning level.
+
 Continuing to type or leaving insert mode dismisses a visible suggestion. The
 CodexCompleteDismiss command and dismiss() Lua function remain available for
 explicit dismissal.
@@ -65,6 +71,15 @@ suggestion around the existing closer without starting a request.
 Every setup option and its default is documented in the project README.
 Mappings can be replaced with strings or disabled with `false`.
 
+The built-in defaults use gpt-5.6-luna with low reasoning. Set codex.model or
+codex.effort to override either value. Runtime selections last for the current
+Neovim session and are reset whenever setup() runs again.
+
+Set codex.effort to the default reasoning effort. Runtime effort selections
+are validated against the active model. If a model switch makes the current
+effort incompatible, the model's advertised default effort is selected. Model
+and effort changes cancel and clear older suggestions.
+
 ==============================================================================
 3. Commands                                         *codex-complete-commands*
 
@@ -82,6 +97,27 @@ Mappings can be replaced with strings or disabled with `false`.
 
                                                     *:CodexCompleteDismiss*
 :CodexCompleteDismiss       Clear the current ghost-text suggestion.
+
+                                                    *:CodexCompleteModel*
+:CodexCompleteModel         Select from the visible Codex model catalog.
+:CodexCompleteModel {id}    Validate and select a model ID.
+:CodexCompleteModel!        Restore the configured default model.
+
+The corresponding Lua functions are select_model(), set_model(id), and
+reset_model(). list_models(callback) asynchronously returns the visible model
+catalog as callback(error, models). status().model contains current and
+default fields.
+
+                                                    *:CodexCompleteEffort*
+:CodexCompleteEffort        Select an effort supported by the active model.
+:CodexCompleteEffort {level} Validate and select a reasoning effort.
+:CodexCompleteEffort!       Restore the configured default effort when the
+                            active model supports it.
+
+The corresponding Lua functions are select_effort(), set_effort(level), and
+reset_effort(). list_efforts(callback) asynchronously returns the active
+model's advertised effort options. status().effort contains current and
+default fields.
 
 ==============================================================================
 4. Privacy                                           *codex-complete-privacy*

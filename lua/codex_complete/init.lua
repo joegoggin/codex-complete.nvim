@@ -122,6 +122,264 @@ function M.toggle()
   return state.enabled
 end
 
+local function model_label(model)
+  return model or "Codex default"
+end
+
+local function apply_runtime(model, effort)
+  if not state.configured then
+    return false
+  end
+  if state.engine.model ~= model or state.engine.effort ~= effort then
+    cancel_work()
+    ui.dismiss()
+    state.cache = {}
+    state.engine:set_model(model)
+    state.engine:set_effort(effort)
+  end
+  return true
+end
+
+local function supports_effort(model, effort)
+  for _, option in ipairs(model.supportedReasoningEfforts) do
+    if option.reasoningEffort == effort then
+      return true
+    end
+  end
+  return false
+end
+
+local function apply_model(model, available)
+  local effort = state.engine.effort
+  local adjusted = not supports_effort(available, effort)
+  if adjusted then
+    effort = available.defaultReasoningEffort
+  end
+  apply_runtime(model, effort)
+  notify("Codex completion model: " .. model_label(model))
+  if adjusted then
+    notify("Reasoning effort adjusted to " .. effort .. " for " .. available.displayName)
+  end
+  return true
+end
+
+local function list_model_catalog(include_hidden, callback)
+  if not state.configured then
+    callback("Call require('codex_complete').setup() before listing models")
+    return false
+  end
+
+  local engine = state.engine
+  engine:list_models({ include_hidden = include_hidden }, function(err, models)
+    if state.engine ~= engine then
+      callback("Codex model request was superseded by setup")
+      return
+    end
+    callback(err, models)
+  end)
+  return true
+end
+
+local function find_model(models, model)
+  for _, available in ipairs(models) do
+    if (model == nil and available.isDefault) or available.id == model or available.model == model then
+      return available
+    end
+  end
+end
+
+function M.list_models(callback)
+  if type(callback) ~= "function" then
+    error("codex-complete: list_models callback must be a function")
+  end
+  return list_model_catalog(false, callback)
+end
+
+function M.list_efforts(callback)
+  if type(callback) ~= "function" then
+    error("codex-complete: list_efforts callback must be a function")
+  end
+  local model = state.engine and state.engine.model
+  return list_model_catalog(true, function(err, models)
+    if err then
+      callback(err)
+      return
+    end
+    local available = find_model(models, model)
+    if not available then
+      callback("Could not find the active Codex model in the model catalog")
+      return
+    end
+    callback(nil, available.supportedReasoningEfforts)
+  end)
+end
+
+function M.set_model(model)
+  if type(model) ~= "string" or model == "" then
+    notify("Model must be a non-empty string", vim.log.levels.ERROR)
+    return false
+  end
+
+  return M.list_models(function(err, models)
+    if err then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+    for _, available in ipairs(models) do
+      if available.id == model or available.model == model then
+        apply_model(available.model, available)
+        return
+      end
+    end
+    notify("Codex model is not available: " .. model, vim.log.levels.ERROR)
+  end)
+end
+
+function M.reset_model()
+  if not state.configured then
+    return false
+  end
+  local model = state.config.codex.model
+  return list_model_catalog(true, function(err, models)
+    if err then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+    local available = find_model(models, model)
+    if not available then
+      notify("Configured Codex model is not available: " .. model_label(model), vim.log.levels.ERROR)
+      return
+    end
+    apply_model(model, available)
+  end)
+end
+
+function M.select_model()
+  local engine = state.engine
+  return M.list_models(function(err, models)
+    if err then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+
+    local reset = {
+      reset = true,
+      model = state.config.codex.model,
+    }
+    local choices = { reset }
+    vim.list_extend(choices, models)
+    vim.ui.select(choices, {
+      prompt = "Codex completion model",
+      format_item = function(item)
+        local current = state.engine and state.engine.model
+        if item.reset then
+          local label = "Configured default (" .. model_label(item.model) .. ")"
+          return item.model == current and label .. " [current]" or label
+        end
+        local label = item.displayName .. " (" .. item.model .. ")"
+        return item.model == current and label .. " [current]" or label
+      end,
+    }, function(choice)
+      if not choice or state.engine ~= engine then
+        return
+      end
+      if choice.reset then
+        M.reset_model()
+      else
+        apply_model(choice.model, choice)
+      end
+    end)
+  end)
+end
+
+local function apply_effort(effort)
+  apply_runtime(state.engine.model, effort)
+  notify("Codex reasoning effort: " .. effort)
+  return true
+end
+
+function M.set_effort(effort)
+  if type(effort) ~= "string" or effort == "" then
+    notify("Reasoning effort must be a non-empty string", vim.log.levels.ERROR)
+    return false
+  end
+
+  return M.list_efforts(function(err, efforts)
+    if err then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+    for _, available in ipairs(efforts) do
+      if available.reasoningEffort == effort then
+        apply_effort(available.reasoningEffort)
+        return
+      end
+    end
+    notify("Reasoning effort is not available for the active model: " .. effort, vim.log.levels.ERROR)
+  end)
+end
+
+function M.reset_effort()
+  if not state.configured then
+    return false
+  end
+  local effort = state.config.codex.effort
+  return M.list_efforts(function(err, efforts)
+    if err then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+    for _, available in ipairs(efforts) do
+      if available.reasoningEffort == effort then
+        apply_effort(effort)
+        return
+      end
+    end
+    notify("Configured reasoning effort is not supported by the active model: " .. effort, vim.log.levels.ERROR)
+  end)
+end
+
+function M.select_effort()
+  local engine = state.engine
+  return M.list_efforts(function(err, efforts)
+    if err then
+      notify(err, vim.log.levels.ERROR)
+      return
+    end
+
+    local reset = {
+      reset = true,
+      reasoningEffort = state.config.codex.effort,
+    }
+    local choices = { reset }
+    vim.list_extend(choices, efforts)
+    vim.ui.select(choices, {
+      prompt = "Codex reasoning effort",
+      format_item = function(item)
+        local current = state.engine and state.engine.effort
+        if item.reset then
+          local label = "Configured default (" .. item.reasoningEffort .. ")"
+          return item.reasoningEffort == current and label .. " [current]" or label
+        end
+        local label = item.reasoningEffort
+        if item.description ~= "" then
+          label = label .. " - " .. item.description
+        end
+        return item.reasoningEffort == current and label .. " [current]" or label
+      end,
+    }, function(choice)
+      if not choice or state.engine ~= engine then
+        return
+      end
+      if choice.reset then
+        M.reset_effort()
+      else
+        apply_effort(choice.reasoningEffort)
+      end
+    end)
+  end)
+end
+
 function M.status()
   return {
     configured = state.configured,
@@ -129,6 +387,14 @@ function M.status()
     auto_trigger = state.config and state.config.auto_trigger or false,
     loading = ui.loading() ~= nil,
     suggestion_visible = ui.current() ~= nil,
+    model = {
+      current = state.engine and state.engine.model or nil,
+      default = state.config and state.config.codex.model or nil,
+    },
+    effort = {
+      current = state.engine and state.engine.effort or nil,
+      default = state.config and state.config.codex.effort or nil,
+    },
     engine = state.engine and state.engine:status() or nil,
   }
 end
@@ -195,8 +461,9 @@ local function clear_runtime()
     state.timer = nil
   end
   if state.engine then
-    state.engine:stop()
+    local engine = state.engine
     state.engine = nil
+    engine:stop()
   end
   state.cache = {}
   state.accepted_changedtick = {}
@@ -225,6 +492,42 @@ local function create_commands()
     pcall(vim.api.nvim_del_user_command, name)
     vim.api.nvim_create_user_command(name, callback, {})
   end
+  pcall(vim.api.nvim_del_user_command, "CodexCompleteModel")
+  vim.api.nvim_create_user_command("CodexCompleteModel", function(args)
+    if args.bang then
+      if args.args ~= "" then
+        notify("CodexCompleteModel! does not accept a model argument", vim.log.levels.ERROR)
+        return
+      end
+      M.reset_model()
+    elseif args.args == "" then
+      M.select_model()
+    else
+      M.set_model(args.args)
+    end
+  end, {
+    bang = true,
+    nargs = "?",
+    desc = "Select the Codex completion model",
+  })
+  pcall(vim.api.nvim_del_user_command, "CodexCompleteEffort")
+  vim.api.nvim_create_user_command("CodexCompleteEffort", function(args)
+    if args.bang then
+      if args.args ~= "" then
+        notify("CodexCompleteEffort! does not accept an effort argument", vim.log.levels.ERROR)
+        return
+      end
+      M.reset_effort()
+    elseif args.args == "" then
+      M.select_effort()
+    else
+      M.set_effort(args.args)
+    end
+  end, {
+    bang = true,
+    nargs = "?",
+    desc = "Select the Codex reasoning effort",
+  })
 end
 
 function M.setup(options)
@@ -296,6 +599,15 @@ function M.setup(options)
     M.trigger({ manual = true })
   end, "Request Codex completion")
   set_mapping("i", state.config.keymaps.dismiss, M.dismiss, "Dismiss Codex completion")
+  set_mapping("n", state.config.keymaps.toggle, function()
+    M.toggle()
+  end, "Toggle Codex suggestions")
+  set_mapping("n", state.config.keymaps.select_model, function()
+    M.select_model()
+  end, "Select Codex completion model")
+  set_mapping("n", state.config.keymaps.select_effort, function()
+    M.select_effort()
+  end, "Select Codex reasoning effort")
   return M
 end
 

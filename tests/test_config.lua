@@ -11,9 +11,47 @@ T["uses documented defaults"] = function()
   MiniTest.expect.equality(value.highlights.background, "CodexCompleteSuggestionBackground")
   MiniTest.expect.equality(value.highlights.existing_delimiter, "MatchParen")
   MiniTest.expect.equality(value.context.max_bytes, 24 * 1024)
+  MiniTest.expect.equality(value.codex.model, "gpt-5.6-luna")
+  MiniTest.expect.equality(value.codex.effort, "low")
   MiniTest.expect.equality(value.keymaps.accept, "<M-;>")
   MiniTest.expect.equality(value.keymaps.trigger, "<M-s>")
   MiniTest.expect.equality(value.keymaps.dismiss, false)
+  MiniTest.expect.equality(value.keymaps.toggle, "<leader>at")
+  MiniTest.expect.equality(value.keymaps.select_model, "<leader>am")
+  MiniTest.expect.equality(value.keymaps.select_effort, "<leader>ar")
+end
+
+T["validates optional action keymaps"] = function()
+  local value = config.resolve({
+    keymaps = { toggle = false, select_model = false, select_effort = "<leader>x" },
+  })
+  MiniTest.expect.equality(value.keymaps.toggle, false)
+  MiniTest.expect.equality(value.keymaps.select_model, false)
+  MiniTest.expect.equality(value.keymaps.select_effort, "<leader>x")
+
+  MiniTest.expect.error(function()
+    config.resolve({ keymaps = { select_model = 42 } })
+  end, "keymaps.select_model")
+  MiniTest.expect.error(function()
+    config.resolve({ keymaps = { select_effort = {} } })
+  end, "keymaps.select_effort")
+  MiniTest.expect.error(function()
+    config.resolve({ keymaps = { toggle = 42 } })
+  end, "keymaps.toggle")
+end
+
+T["validates the configured default model"] = function()
+  MiniTest.expect.equality(config.resolve({ codex = { model = "gpt-test-fast" } }).codex.model, "gpt-test-fast")
+  MiniTest.expect.error(function()
+    config.resolve({ codex = { model = "" } })
+  end, "codex.model")
+end
+
+T["validates the configured default reasoning effort"] = function()
+  MiniTest.expect.equality(config.resolve({ codex = { effort = "high" } }).codex.effort, "high")
+  MiniTest.expect.error(function()
+    config.resolve({ codex = { effort = "" } })
+  end, "codex.effort")
 end
 
 T["merges nested options"] = function()

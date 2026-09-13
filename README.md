@@ -56,10 +56,13 @@ Run the health check after installation:
 
 ## Default controls
 
-| Key | Action |
-| --- | --- |
-| `Alt-;` (`<M-;>`) | Accept the current suggestion |
-| `Alt-s` (`<M-s>`) | Request a suggestion manually |
+| Key | Mode | Action |
+| --- | --- | --- |
+| `Alt-;` (`<M-;>`) | Insert | Accept the current suggestion |
+| `Alt-s` (`<M-s>`) | Insert | Request a suggestion manually |
+| `<leader>at` | Normal | Toggle suggestions |
+| `<leader>am` | Normal | Select the completion model |
+| `<leader>ar` | Normal | Select the reasoning level |
 
 Visible suggestions are dismissed when you continue typing or leave insert
 mode. You can also dismiss them through `:CodexCompleteDismiss` or `dismiss()`.
@@ -114,14 +117,17 @@ require("codex_complete").setup({
   },
   codex = {
     command = "codex",
-    model = nil, -- Inherit the model selected by Codex.
-    effort = "low",
+    model = "gpt-5.6-luna", -- Default completion model.
+    effort = "low", -- Default reasoning effort.
     timeout_ms = 30 * 1000,
   },
   keymaps = {
     accept = "<M-;>",
     trigger = "<M-s>",
     dismiss = false,
+    toggle = "<leader>at",
+    select_model = "<leader>am",
+    select_effort = "<leader>ar",
   },
   -- Omit `filetypes` to use the built-in code and structured-data allowlist.
   sensitive_patterns = {
@@ -136,6 +142,16 @@ Set a keymap to `false` to leave it unmapped. Manual requests may be used in
 editable filetypes outside the automatic allowlist, but sensitive filenames,
 special buffers, and read-only buffers always remain blocked.
 
+The built-in defaults use `gpt-5.6-luna` with `low` reasoning. Set
+`codex.model` or `codex.effort` to override either value. Runtime model changes
+last for the current Neovim session and can be reset to the configured value
+with `:CodexCompleteModel!`.
+
+Set `codex.effort` to the default reasoning effort. Runtime effort choices are
+validated against the active model and reset with `:CodexCompleteEffort!`. If a
+new model does not support the current effort, the plugin adopts that model's
+advertised default. Model and effort changes cancel and clear older suggestions.
+
 ## Commands and Lua API
 
 | Command | Lua function | Purpose |
@@ -145,9 +161,19 @@ special buffers, and read-only buffers always remain blocked.
 | `:CodexCompleteDisable` | `disable()` | Cancel work and disable requests |
 | `:CodexCompleteToggle` | `toggle()` | Toggle request handling |
 | `:CodexCompleteDismiss` | `dismiss()` | Clear visible ghost text |
+| `:CodexCompleteModel` | `select_model()` | Select from available models |
+| `:CodexCompleteModel {id}` | `set_model(id)` | Validate and select a model ID |
+| `:CodexCompleteModel!` | `reset_model()` | Restore the configured default model |
+| `:CodexCompleteEffort` | `select_effort()` | Select an effort supported by the active model |
+| `:CodexCompleteEffort {level}` | `set_effort(level)` | Validate and select an effort |
+| `:CodexCompleteEffort!` | `reset_effort()` | Restore the configured default effort |
 
 `accept()` inserts a visible suggestion, while `status()` returns current
-plugin, process, request, loading-indicator, and error state.
+plugin, process, request, model, reasoning-effort, loading-indicator, and error
+state.
+`list_models(callback)` retrieves the visible Codex model catalog and calls
+`callback(error, models)` when it completes. `list_efforts(callback)` similarly
+returns the active model's supported reasoning efforts.
 
 ## Privacy and safety
 

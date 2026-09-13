@@ -3,6 +3,10 @@ local config = require("codex_complete.config")
 local context = require("codex_complete.context")
 local plugin = require("codex_complete")
 local ui = require("codex_complete.ui")
+local original_ui_select = vim.ui.select
+local original_notify = vim.notify
+local original_select_model = plugin.select_model
+local original_select_effort = plugin.select_effort
 
 local function python_command(...)
   local python = vim.fn.exepath("python3")
@@ -41,17 +45,77 @@ local T = MiniTest.new_set({
       plugin.setup({ auto_trigger = false })
     end,
     post_case = function()
+      vim.ui.select = original_ui_select
+      vim.notify = original_notify
+      plugin.select_model = original_select_model
+      plugin.select_effort = original_select_effort
       plugin.disable()
       ui.dismiss()
     end,
   },
 })
 
-T["installs the default accept and trigger mappings"] = function()
+T["installs the default mappings"] = function()
   MiniTest.expect.equality(vim.fn.maparg("<M-;>", "i") ~= "", true)
   MiniTest.expect.equality(vim.fn.maparg("<M-s>", "i") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>at", "n") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>am", "n") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>ar", "n") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>at", "i"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>am", "i"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>ar", "i"), "")
   MiniTest.expect.equality(vim.fn.maparg("<M-q>", "i"), "")
   MiniTest.expect.equality(vim.fn.maparg("<M-Tab>", "i"), "")
+end
+
+T["toggle mapping changes suggestion handling state"] = function()
+  local mapping = vim.fn.maparg("<leader>at", "n", false, true)
+  MiniTest.expect.equality(mapping.desc, "Toggle Codex suggestions")
+  MiniTest.expect.equality(plugin.status().enabled, true)
+  mapping.callback()
+  MiniTest.expect.equality(plugin.status().enabled, false)
+  mapping.callback()
+  MiniTest.expect.equality(plugin.status().enabled, true)
+end
+
+T["selector mappings launch their pickers"] = function()
+  local model_selected = false
+  local effort_selected = false
+  plugin.select_model = function()
+    model_selected = true
+  end
+  plugin.select_effort = function()
+    effort_selected = true
+  end
+
+  local model_mapping = vim.fn.maparg("<leader>am", "n", false, true)
+  local effort_mapping = vim.fn.maparg("<leader>ar", "n", false, true)
+  MiniTest.expect.equality(model_mapping.desc, "Select Codex completion model")
+  MiniTest.expect.equality(effort_mapping.desc, "Select Codex reasoning effort")
+  model_mapping.callback()
+  effort_mapping.callback()
+  MiniTest.expect.equality(model_selected, true)
+  MiniTest.expect.equality(effort_selected, true)
+end
+
+T["replaces and disables normal-mode action mappings on setup"] = function()
+  plugin.setup({
+    auto_trigger = false,
+    keymaps = { toggle = "<leader>xt", select_model = "<leader>xm", select_effort = false },
+  })
+  MiniTest.expect.equality(vim.fn.maparg("<leader>at", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>am", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>ar", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xt", "n") ~= "", true)
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xm", "n") ~= "", true)
+
+  plugin.setup({
+    auto_trigger = false,
+    keymaps = { toggle = false, select_model = false, select_effort = "<leader>xr" },
+  })
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xt", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xm", "n"), "")
+  MiniTest.expect.equality(vim.fn.maparg("<leader>xr", "n") ~= "", true)
 end
 
 T["defines and restores default suggestion highlights"] = function()
@@ -326,6 +390,387 @@ T["clears cached suggestions when accepted or dismissed"] = function()
   setup_cached_suggestion()
   plugin.dismiss()
   MiniTest.expect.equality(plugin._state.cache[vim.api.nvim_get_current_buf()], nil)
+end
+
+T["lists models and reports configured and current selections"] = function()
+  plugin.setup({
+    auto_trigger = false,
+    codex = { command = python_command(), model = "gpt-test-fast" },
+  })
+  local models
+  local failure
+  MiniTest.expect.equality(
+    plugin.list_models(function(err, result)
+      failure = err
+      models = result
+    end),
+    true
+  )
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return models ~= nil or failure ~= nil
+    end, 10),
+    true
+  )
+
+  MiniTest.expect.equality(failure, nil)
+  MiniTest.expect.equality(#models, 3)
+  MiniTest.expect.equality(plugin.status().model, {
+    current = "gpt-test-fast",
+    default = "gpt-test-fast",
+  })
+  MiniTest.expect.equality(plugin.status().effort, {
+    current = "low",
+    default = "low",
+  })
+end
+
+T["switches to a validated command argument and resets with bang"] = function()
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command(), model = "gpt-test-fast" },
+  })
+
+  vim.cmd("CodexCompleteModel gpt-test-pro")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return plugin.status().model.current == "gpt-test-pro"
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().model.default, "gpt-test-fast")
+  MiniTest.expect.equality(plugin.status().effort.current, "high")
+
+  vim.cmd("CodexCompleteModel!")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return plugin.status().model.current == "gpt-test-fast"
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().effort.current, "low")
+end
+
+T["keeps the current model when a command argument is unavailable"] = function()
+  local message
+  vim.notify = function(value)
+    message = value
+  end
+  plugin.setup({
+    auto_trigger = false,
+    codex = { command = python_command(), model = "gpt-test-fast" },
+  })
+
+  vim.cmd("CodexCompleteModel unavailable-model")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return message ~= nil
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(message, "Codex model is not available: unavailable-model")
+  MiniTest.expect.equality(plugin.status().model.current, "gpt-test-fast")
+end
+
+T["selects a visible model from the picker"] = function()
+  local labels
+  vim.ui.select = function(items, options, on_choice)
+    labels = vim.tbl_map(options.format_item, items)
+    on_choice(items[4])
+  end
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command(), model = "gpt-test-fast" },
+  })
+
+  MiniTest.expect.equality(plugin.select_model(), true)
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return labels ~= nil
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(labels[1], "Configured default (gpt-test-fast) [current]")
+  MiniTest.expect.equality(labels[4], "GPT Test Pro (gpt-test-pro)")
+  MiniTest.expect.equality(plugin.status().model.current, "gpt-test-pro")
+end
+
+T["leaves the model unchanged when the picker is cancelled"] = function()
+  local opened = false
+  vim.ui.select = function(_, _, on_choice)
+    opened = true
+    on_choice(nil)
+  end
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command(), model = "gpt-test-fast" },
+  })
+
+  plugin.select_model()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return opened
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().model.current, "gpt-test-fast")
+end
+
+T["switching models cancels work and clears old suggestions"] = function()
+  local choices
+  local choose
+  vim.ui.select = function(items, _, on_choice)
+    choices = items
+    choose = on_choice
+  end
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command(), timeout_ms = 5000 },
+  })
+  plugin.select_model()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return choose ~= nil
+    end, 10),
+    true
+  )
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local captured = context.capture(bufnr, vim.api.nvim_get_current_win(), plugin._state.config)
+  plugin._state.cache[bufnr] = { context = captured, completion = "42" }
+  ui.show(captured, "42", { highlights = plugin._state.config.highlights })
+  MiniTest.expect.equality(plugin.trigger({ manual = true }), true)
+  MiniTest.expect.equality(plugin.status().engine.active, true)
+
+  choose(choices[3])
+  MiniTest.expect.equality(plugin.status().model.current, "gpt-test-fast")
+  MiniTest.expect.equality(plugin.status().effort.current, "low")
+  MiniTest.expect.equality(plugin.status().engine.active, false)
+  MiniTest.expect.equality(plugin.status().suggestion_visible, false)
+  MiniTest.expect.equality(plugin._state.cache[bufnr], nil)
+end
+
+T["ignores a picker choice after setup replaces its engine"] = function()
+  local choice
+  local choose
+  vim.ui.select = function(items, _, on_choice)
+    choice = items[2]
+    choose = on_choice
+  end
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+  plugin.select_model()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return choose ~= nil
+    end, 10),
+    true
+  )
+
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+  choose(choice)
+  MiniTest.expect.equality(plugin.status().model.current, "gpt-5.6-luna")
+end
+
+T["settles a model-list callback when setup replaces its engine"] = function()
+  local failure
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command("--delay-model-list") },
+  })
+  plugin.list_models(function(err)
+    failure = err
+  end)
+
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+  MiniTest.expect.equality(failure, "Codex model request was superseded by setup")
+  MiniTest.expect.equality(plugin.status().model.current, "gpt-5.6-luna")
+end
+
+T["lists reasoning efforts for the configured default model"] = function()
+  local efforts
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+  plugin.list_efforts(function(err, result)
+    MiniTest.expect.equality(err, nil)
+    efforts = result
+  end)
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return efforts ~= nil
+    end, 10),
+    true
+  )
+
+  MiniTest.expect.equality(
+    vim.tbl_map(function(option)
+      return option.reasoningEffort
+    end, efforts),
+    { "low", "medium" }
+  )
+end
+
+T["lists reasoning efforts for a hidden configured model"] = function()
+  local efforts
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command(), model = "gpt-test-hidden", effort = "medium" },
+  })
+  plugin.list_efforts(function(err, result)
+    MiniTest.expect.equality(err, nil)
+    efforts = result
+  end)
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return efforts ~= nil
+    end, 10),
+    true
+  )
+
+  MiniTest.expect.equality(#efforts, 1)
+  MiniTest.expect.equality(efforts[1].reasoningEffort, "medium")
+end
+
+T["switches to a validated reasoning effort and resets it"] = function()
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+
+  vim.cmd("CodexCompleteEffort medium")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return plugin.status().effort.current == "medium"
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().effort.default, "low")
+
+  vim.cmd("CodexCompleteEffort!")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return plugin.status().effort.current == "low"
+    end, 10),
+    true
+  )
+end
+
+T["keeps the current reasoning effort when a value is unavailable"] = function()
+  local message
+  vim.notify = function(value)
+    message = value
+  end
+  plugin.setup({ auto_trigger = false, codex = { command = python_command() } })
+
+  vim.cmd("CodexCompleteEffort xhigh")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return message ~= nil
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(message, "Reasoning effort is not available for the active model: xhigh")
+  MiniTest.expect.equality(plugin.status().effort.current, "low")
+end
+
+T["selects a reasoning effort from the picker"] = function()
+  local labels
+  vim.ui.select = function(items, options, on_choice)
+    labels = vim.tbl_map(options.format_item, items)
+    on_choice(items[3])
+  end
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+
+  plugin.select_effort()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return labels ~= nil
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(labels[1], "Configured default (low) [current]")
+  MiniTest.expect.equality(labels[3], "medium - Balanced")
+  MiniTest.expect.equality(plugin.status().effort.current, "medium")
+end
+
+T["leaves reasoning effort unchanged when its picker is cancelled"] = function()
+  local opened = false
+  vim.ui.select = function(_, _, on_choice)
+    opened = true
+    on_choice(nil)
+  end
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+
+  plugin.select_effort()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return opened
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().effort.current, "low")
+end
+
+T["changing reasoning effort cancels work and clears old suggestions"] = function()
+  local choices
+  local choose
+  vim.ui.select = function(items, _, on_choice)
+    choices = items
+    choose = on_choice
+  end
+  plugin.setup({
+    auto_trigger = false,
+    notify = false,
+    codex = { command = python_command(), timeout_ms = 5000 },
+  })
+  plugin.select_effort()
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return choose ~= nil
+    end, 10),
+    true
+  )
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local captured = context.capture(bufnr, vim.api.nvim_get_current_win(), plugin._state.config)
+  plugin._state.cache[bufnr] = { context = captured, completion = "42" }
+  ui.show(captured, "42", { highlights = plugin._state.config.highlights })
+  MiniTest.expect.equality(plugin.trigger({ manual = true }), true)
+  MiniTest.expect.equality(plugin.status().engine.active, true)
+
+  choose(choices[3])
+  MiniTest.expect.equality(plugin.status().effort.current, "medium")
+  MiniTest.expect.equality(plugin.status().engine.active, false)
+  MiniTest.expect.equality(plugin.status().suggestion_visible, false)
+  MiniTest.expect.equality(plugin._state.cache[bufnr], nil)
+end
+
+T["rejects resetting an effort unsupported by the runtime model"] = function()
+  local message
+  plugin.setup({ auto_trigger = false, notify = false, codex = { command = python_command() } })
+  plugin.set_model("gpt-test-pro")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return plugin.status().model.current == "gpt-test-pro"
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(plugin.status().effort.current, "high")
+
+  vim.notify = function(value)
+    message = value
+  end
+  plugin._state.config.notify = true
+  vim.cmd("CodexCompleteEffort!")
+  MiniTest.expect.equality(
+    vim.wait(5000, function()
+      return message ~= nil
+    end, 10),
+    true
+  )
+  MiniTest.expect.equality(message, "Configured reasoning effort is not supported by the active model: low")
+  MiniTest.expect.equality(plugin.status().effort.current, "high")
 end
 
 T["retains cache across insert exit and clears it with the buffer"] = function()
