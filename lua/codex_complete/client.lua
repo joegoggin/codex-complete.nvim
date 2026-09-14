@@ -12,6 +12,14 @@ local function command_argv(command)
   return argv
 end
 
+--- Uses jobs to avoid a Windows handle-cleanup defect in Neovim 0.10's `vim.system`.
+---
+---@return boolean required Whether the job transport is required.
+---
+local function use_jobstart()
+  return vim.fn.has("win32") == 1 and vim.fn.has("nvim-0.11") == 0
+end
+
 function Client.new(options)
   return setmetatable({
     command = options.command,
@@ -151,6 +159,97 @@ function Client:_consume_stderr(err, chunk)
   self.stderr_tail = (self.stderr_tail .. tostring(text)):sub(-4096)
 end
 
+--- Handles an app-server process exit.
+---
+---@param code integer|nil Process exit status.
+---
+function Client:_handle_exit(code)
+  vim.schedule(function()
+    local was_shutting_down = self.shutting_down
+    self.process = nil
+    self.state = "stopped"
+    local message = ("Codex app-server exited with code %d"):format(code or -1)
+    if self.stderr_tail ~= "" then
+      message = message .. ": " .. vim.trim(self.stderr_tail)
+    end
+    self:_fail_pending(message)
+    self:_flush_waiters(message)
+    if not was_shutting_down and self.on_exit then
+      self.on_exit(message)
+    end
+  end)
+end
+
+--- Starts a process using Neovim's job API.
+---
+---@param argv string[] App-server command and arguments.
+---@return boolean ok Whether the process started.
+---@return table|string process_or_error Process wrapper or startup error.
+---
+function Client:_start_job(argv)
+  local job = vim.fn.jobstart(argv, {
+    stderr_buffered = false,
+    stdout_buffered = false,
+    on_stdout = function(_, data)
+      if type(data) == "table" then
+        self:_consume_stdout(nil, table.concat(data, "\n"))
+      end
+    end,
+    on_stderr = function(_, data)
+      if type(data) == "table" then
+        self:_consume_stderr(nil, table.concat(data, "\n"))
+      end
+    end,
+    on_exit = function(_, code)
+      self:_handle_exit(code)
+    end,
+  })
+  if job <= 0 then
+    return false, "jobstart failed"
+  end
+  return true,
+    {
+      write = function(_, data)
+        if data == nil then
+          return vim.fn.chanclose(job, "stdin")
+        end
+        return vim.fn.chansend(job, data)
+      end,
+      kill = function()
+        return vim.fn.jobstop(job)
+      end,
+    }
+end
+
+--- Starts a process using Neovim's system API.
+---
+---@param argv string[] App-server command and arguments.
+---@return boolean ok Whether the process started.
+---@return table|string process_or_error Process wrapper or startup error.
+---
+function Client:_start_system(argv)
+  return pcall(vim.system, argv, {
+    stdin = true,
+    text = true,
+    stdout = function(err, data)
+      self:_consume_stdout(err, data)
+    end,
+    stderr = function(err, data)
+      self:_consume_stderr(err, data)
+    end,
+  }, function(result)
+    self:_handle_exit(result.code)
+  end)
+end
+
+--- Checks whether the job-based compatibility transport is required.
+---
+---@return boolean required Whether the job transport is required.
+---
+function Client:_use_jobstart()
+  return use_jobstart()
+end
+
 function Client:_authenticate_then_ready()
   self:request("account/read", { refreshToken = false }, function(err, result)
     if err then
@@ -187,31 +286,13 @@ function Client:start(callback)
   self.stdout_buffer = ""
   self.stderr_tail = ""
 
-  local ok, process_or_error = pcall(vim.system, command_argv(self.command), {
-    stdin = true,
-    text = true,
-    stdout = function(err, data)
-      self:_consume_stdout(err, data)
-    end,
-    stderr = function(err, data)
-      self:_consume_stderr(err, data)
-    end,
-  }, function(result)
-    vim.schedule(function()
-      local was_shutting_down = self.shutting_down
-      self.process = nil
-      self.state = "stopped"
-      local message = ("Codex app-server exited with code %d"):format(result.code or -1)
-      if self.stderr_tail ~= "" then
-        message = message .. ": " .. vim.trim(self.stderr_tail)
-      end
-      self:_fail_pending(message)
-      self:_flush_waiters(message)
-      if not was_shutting_down and self.on_exit then
-        self.on_exit(message)
-      end
-    end)
-  end)
+  local argv = command_argv(self.command)
+  local ok, process_or_error
+  if self:_use_jobstart() then
+    ok, process_or_error = self:_start_job(argv)
+  else
+    ok, process_or_error = self:_start_system(argv)
+  end
 
   if not ok then
     self.state = "stopped"
