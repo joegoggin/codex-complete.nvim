@@ -1,6 +1,7 @@
 local M = {}
 
 local context = require("codex_complete.context")
+local related = require("codex_complete.related")
 local config_module = require("codex_complete.config")
 local Engine = require("codex_complete.engine")
 local ui = require("codex_complete.ui")
@@ -119,6 +120,11 @@ end
 
 function M.accept()
   local visible = ui.current()
+  if visible and not related.valid(visible.context) then
+    state.cache[visible.context.bufnr] = nil
+    ui.dismiss()
+    return false
+  end
   local accepted = ui.accept()
   if accepted and visible then
     local bufnr = visible.context.bufnr
@@ -461,7 +467,7 @@ local function schedule_auto(args)
   end
   local captured = context.capture(bufnr, vim.api.nvim_get_current_win(), state.config)
   local cached = state.cache[bufnr]
-  if cached then
+  if cached and related.valid(cached.context) then
     local remainder, paired_delimiter = context.cached_remainder(cached.context, captured, cached.completion)
     if remainder == "" then
       return

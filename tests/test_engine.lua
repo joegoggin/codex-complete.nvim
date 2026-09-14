@@ -351,4 +351,38 @@ T["settles a silent request after a timeout"] = function()
   MiniTest.expect.equality(status.last_error, "Codex completion timed out")
 end
 
+--- Verifies skill announcements cannot replace structured completion output.
+---
+--- # Example Under Test
+---
+--- An agent emits commentary and streamed text before its final response.
+---
+--- # Assertions
+---
+--- - Only the completed final message reaches the completion parser.
+---
+T["keeps skill commentary out of completions"] = function()
+  local value = config.resolve()
+  local received
+  local engine = Engine.new(value, {
+    on_completion = function(_, completion)
+      received = completion
+    end,
+  })
+  engine.active = { context = context.capture(0, 0, value), generation = 0, started = vim.uv.hrtime() }
+  engine:_on_notification(
+    "item/completed",
+    { item = { type = "agentMessage", phase = "commentary", text = "Loading docs" } }
+  )
+  MiniTest.expect.equality(engine.active.message, nil)
+  engine:_on_notification("item/agentMessage/delta", { delta = "partial" })
+  engine:_on_notification(
+    "item/completed",
+    { item = { type = "agentMessage", phase = "final_answer", text = '{"completion":" world"}' } }
+  )
+  engine:_on_notification("item/completed", { item = { type = "agentMessage", phase = "commentary", text = "Done" } })
+  engine:_on_notification("turn/completed", { turn = { status = "completed" } })
+  MiniTest.expect.equality(received, " world")
+end
+
 return T

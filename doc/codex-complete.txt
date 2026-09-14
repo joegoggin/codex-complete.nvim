@@ -74,6 +74,21 @@ suggestion around the existing closer without starting a request.
 Every setup option and its default is documented in the project README.
 Mappings can be replaced with strings or disabled with `false`.
 
+Related context combines LSP definitions, matching project buffers, and bounded
+rg searches. Unsaved buffers override disk contents. context.related defaults to:
+>lua
+  { enabled = true, timeout_ms = 150, max_bytes = 16 * 1024, max_snippets = 8 }
+<
+This budget supplements the current-buffer budget. Cached sources are checked
+for changes before reuse. Missing LSP support or rg is handled gracefully.
+Codex uses the active file's directory for project instructions and native skill
+discovery. Applicable skills may read references, adding model round trips beyond
+the local retrieval deadline. Disabling related context disables local enrichment,
+not Codex's own skill and file reads.
+
+status().engine.context reports duration_ms, cache_hits, and source filenames.
+status().engine.duration_ms reports the last request's total duration.
+
 Place the cursor on a comment and press <leader>ac to generate a replacement,
 or run :CodexCompleteComment. The full Tree-sitter comment node is sent as the
 instruction, and highlighted replacement text is previewed below the comment
@@ -156,10 +171,12 @@ lualine component options can customize its presentation.
 ==============================================================================
 5. Privacy                                           *codex-complete-privacy*
 
-Only bounded text from the current buffer, its filename, filetype, and cursor
-position are included in requests. Comment replacement requests additionally
-include the raw comment text and its range. Other buffers and repository files
-are not sent. Sensitive filenames are blocked. Completion threads are
-ephemeral and tool-free, with read-only sandboxing and approvals disabled.
+Requests include bounded current-buffer text and related project snippets with
+filenames and line ranges. Comment requests include the comment and its range.
+Local retrieval excludes sensitive filenames and generated directories; disk
+searches respect ignore rules. Codex may also read project files, skills, and
+references independently of those filters. Threads are ephemeral with read-only
+sandboxing, network access disabled, and approvals disabled. Codex is instructed
+to produce only the requested edit and not modify files or run skill scripts.
 
 vim:tw=78:ts=8:noet:ft=help:norl:

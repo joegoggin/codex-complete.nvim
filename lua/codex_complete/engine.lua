@@ -1,6 +1,7 @@
 local context = require("codex_complete.context")
 local Client = require("codex_complete.client")
 local prompt = require("codex_complete.prompt")
+local related = require("codex_complete.related")
 
 local Engine = {}
 Engine.__index = Engine
@@ -36,6 +37,8 @@ function Engine:_finish(request, completion)
     return
   end
   self.active = nil
+  self.last_retrieval = request.context.retrieval
+  self.last_duration_ms = (vim.uv.hrtime() - request.started) / 1e6
   if request.timeout then
     request.timeout:stop()
     request.timeout:close()
@@ -43,7 +46,7 @@ function Engine:_finish(request, completion)
   if self.callbacks.on_finished then
     self.callbacks.on_finished(request.context)
   end
-  if completion and context.is_current(request.context) then
+  if completion and context.is_current(request.context) and related.valid(request.context) then
     self.last_error = nil
     self.callbacks.on_completion(request.context, completion)
   end
@@ -54,6 +57,11 @@ function Engine:_fail(request, message)
     return
   end
   self.active = nil
+  if request.cancel_context then
+    request.cancel_context()
+  end
+  self.last_retrieval = request.context.retrieval
+  self.last_duration_ms = (vim.uv.hrtime() - request.started) / 1e6
   self.last_error = message
   if request.timeout then
     request.timeout:stop()
@@ -77,7 +85,7 @@ end
 
 function Engine:_start_turn(request)
   local thread_params = {
-    cwd = vim.fn.stdpath("cache"),
+    cwd = request.context.cwd,
     ephemeral = true,
     approvalPolicy = "never",
     sandbox = "read-only",
@@ -234,6 +242,7 @@ function Engine:request(captured_context, manual)
     manual = manual,
     message = nil,
     cancelled = false,
+    started = vim.uv.hrtime(),
   }
   self.active = request
 
@@ -262,7 +271,13 @@ function Engine:request(captured_context, manual)
       self:_fail(request, err)
       return
     end
-    self:_start_turn(request)
+    request.cancel_context = related.collect(captured_context, self.config, function()
+      if self:_is_active(request) and context.is_current(captured_context) then
+        self:_start_turn(request)
+      elseif self:_is_active(request) then
+        self:cancel()
+      end
+    end)
   end)
 end
 
@@ -272,6 +287,9 @@ function Engine:cancel()
     return
   end
   request.cancelled = true
+  if request.cancel_context then
+    request.cancel_context()
+  end
   self.active = nil
   if request.timeout then
     request.timeout:stop()
@@ -304,13 +322,9 @@ function Engine:_on_notification(method, params)
 
   if method == "item/completed" then
     local item = params.item or {}
-    if item.type == "agentMessage" and item.text then
+    if item.type == "agentMessage" and item.text and item.phase ~= "commentary" then
       request.message = item.text
     end
-    return
-  end
-  if method == "item/agentMessage/delta" and params.delta then
-    request.message = (request.message or "") .. params.delta
     return
   end
   if method == "turn/completed" then
@@ -345,6 +359,8 @@ function Engine:status()
     model = self.model,
     effort = self.effort,
     client = self.client:status(),
+    context = self.active and self.active.context.retrieval or self.last_retrieval,
+    duration_ms = self.last_duration_ms,
   }
 end
 

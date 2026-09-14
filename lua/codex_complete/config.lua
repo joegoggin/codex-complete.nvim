@@ -14,6 +14,12 @@ local defaults = {
     before_lines = 200,
     after_lines = 50,
     max_bytes = 24 * 1024,
+    related = {
+      enabled = true,
+      timeout_ms = 150,
+      max_bytes = 16 * 1024,
+      max_snippets = 8,
+    },
   },
   suggestion = {
     max_lines = 20,
@@ -176,6 +182,12 @@ function M.resolve(opts)
   validate_number("context.before_lines", value.context.before_lines, 0)
   validate_number("context.after_lines", value.context.after_lines, 0)
   validate_number("context.max_bytes", value.context.max_bytes, 256)
+  if type(value.context.related.enabled) ~= "boolean" then
+    error("codex-complete: context.related.enabled must be a boolean")
+  end
+  validate_number("context.related.timeout_ms", value.context.related.timeout_ms, 0)
+  validate_number("context.related.max_bytes", value.context.related.max_bytes, 256)
+  validate_number("context.related.max_snippets", value.context.related.max_snippets, 1)
   validate_number("suggestion.max_lines", value.suggestion.max_lines, 1)
   validate_number("suggestion.max_bytes", value.suggestion.max_bytes, 1)
   validate_number("codex.timeout_ms", value.codex.timeout_ms, 1000)

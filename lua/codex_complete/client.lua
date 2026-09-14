@@ -74,8 +74,7 @@ function Client:request(method, params, callback)
 end
 
 function Client:_handle_server_request(message)
-  -- Completion turns are explicitly tool-free. Fail closed if Codex asks the
-  -- editor to approve or perform anything outside text generation.
+  --- Editor-side tools and approvals are unavailable; Codex owns read-only inspection.
   self:_write({
     id = message.id,
     error = {

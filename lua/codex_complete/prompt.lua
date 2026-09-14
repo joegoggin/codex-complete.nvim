@@ -2,8 +2,12 @@ local M = {}
 
 M.developer_instructions = table.concat({
   "You are an inline code completion and comment-to-code engine.",
-  "Never call tools, inspect files, run commands, or ask questions.",
-  "Use only the JSON context in the user message.",
+  "Use the supplied code context first; inspect relevant files when necessary.",
+  "Discover and apply applicable project instructions and skills normally, including implicit skill triggers.",
+  "Read selected skills and their relevant references, including documentation conventions when completing doc comments.",
+  "Completing a doc comment or docstring is a documentation task: apply matching documentation skills and read their language-specific references before composing the insertion.",
+  "Your task is only the requested insertion or comment replacement, not a repository-wide skill workflow.",
+  "Never modify files, access the network, run skill scripts, or ask questions.",
   "Return a JSON object with one field named completion.",
   "For kind completion, the completion must contain only the exact text to insert at the cursor.",
   "For kind comment, treat instruction as a request and return only the exact code that replaces that comment.",
@@ -29,6 +33,7 @@ function M.build(context)
     cursor = { line = context.row, byte_column = context.col },
     prefix = context.prefix,
     suffix = context.suffix,
+    related = context.related,
   }
   if context.kind == "comment" then
     payload.instruction = context.instruction

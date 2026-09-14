@@ -4,7 +4,7 @@ Codex-powered inline completions for Neovim, using your existing Codex CLI login
 instead of an OpenAI API key.
 
 The plugin waits briefly after you stop typing, sends bounded context from the
-current buffer to a persistent `codex app-server` process, and displays the
+current buffer and relevant project definitions to a persistent `codex app-server` process, and displays the
 result as single- or multiline ghost text. The buffer is not changed until you
 accept the suggestion.
 
@@ -127,6 +127,12 @@ require("codex_complete").setup({
     before_lines = 200,
     after_lines = 50,
     max_bytes = 24 * 1024,
+    related = {
+      enabled = true,
+      timeout_ms = 150,
+      max_bytes = 16 * 1024,
+      max_snippets = 8,
+    },
   },
   suggestion = {
     max_lines = 20,
@@ -160,6 +166,27 @@ require("codex_complete").setup({
 Set a keymap to `false` to leave it unmapped. Manual requests may be used in
 editable filetypes outside the automatic allowlist, but sensitive filenames,
 special buffers, and read-only buffers always remain blocked.
+
+Related context uses language-server definitions, matching project buffers, and
+bounded `rg` searches of unopened files. Unsaved buffer text takes precedence.
+The collector caches snippets and checks source revisions before reuse. The
+project root comes from an attached LSP workspace, Git, or the file directory.
+Missing LSP support or `rg` does not prevent completion.
+
+Local retrieval waits up to `context.related.timeout_ms` (150 ms by default).
+Related code adds at most 16 KiB across eight snippets to the existing 24 KiB
+current-buffer budget. Set `context.related.enabled = false` to disable this
+local enrichment. These limits do not limit Codex's own file or skill reads.
+
+Codex threads start in the active file's directory and can discover project
+instructions and skills normally. For example, completing `///` above a Rust
+struct can trigger a documentation skill and load its Rust convention reference.
+Skill selection remains model-driven; loading a skill can add model round trips
+beyond the local retrieval deadline. The model and reasoning defaults are unchanged.
+
+`status().engine.context` reports retrieval time, source filenames, and cache
+hits. `status().engine.duration_ms` reports the last request's total duration.
+These diagnostics do not log source contents.
 
 The built-in defaults use `gpt-5.6-luna` with `low` reasoning. Set
 `codex.model` or `codex.effort` to override either value. Runtime model changes
@@ -215,13 +242,16 @@ lualine's standard component options can customize its presentation.
 
 ## Privacy and safety
 
-- Only the configured prefix and suffix from the current buffer are placed in a
-  completion prompt. Comment requests also include the selected raw comment
-  text and its replacement range. Other buffers and repository files are not
-  included.
+- Requests include bounded current-buffer text and relevant project snippets,
+  with filenames and line ranges. Comment requests also include the selected
+  comment and replacement range. The local collector excludes sensitive
+  filenames and generated directories and respects ignore rules in disk searches.
 - Completion threads are ephemeral, run with a read-only sandbox and approval
-  policy of `never`, and are instructed not to call tools.
-- The app server runs from Neovim's cache directory rather than the repository.
+  policy of `never`, with network access disabled. Codex may read project files,
+  instructions, skills, and references; it is instructed not to modify files or
+  run skill scripts. Local snippet filters do not govern Codex's own file reads.
+- Completion threads use the active file's directory (Neovim's working directory
+  for unnamed buffers).
 - The plugin checks account state through the app-server protocol. It never
   reads, copies, or logs `~/.codex/auth.json`.
 - Completion context is sent to OpenAI through the locally authenticated Codex
@@ -250,6 +280,13 @@ Tests use a local mock app server and never require network access or real
 credentials. `make check` also requires
 [StyLua](https://github.com/JohnnyMorganz/StyLua) and
 [Selene](https://github.com/Kampfkarren/selene).
+
+An optional authenticated smoke check is available with
+`nvim --headless -u NONE -l tests/manual_context_smoke.lua`. It sends synthetic
+Rust completion requests and prints suggestions, read commands, and timing
+metadata. Set `CODEX_COMPLETE_CASE=struct` or `docs` to select one case, or
+`CODEX_COMPLETE_BASELINE=1` to compare with buffer-only context and a tool-free
+prompt. Ensure `codex` on PATH launches the app server without extra stdout.
 
 ## License
 
