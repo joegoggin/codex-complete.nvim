@@ -141,7 +141,7 @@ T["normalizes LSP links and encoded positions"] = function()
   captured = context.capture(0, 0, options)
   local original = vim.lsp.get_clients
   local position
-  local root = vim.fn.getcwd() .. "/tests/fixtures/related"
+  local root = vim.fs.normalize(vim.fn.getcwd() .. "/tests/fixtures/related")
   local client = {
     config = { root_dir = root },
     offset_encoding = "utf-16",
