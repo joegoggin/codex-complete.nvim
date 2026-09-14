@@ -23,7 +23,7 @@ local keywords = {
 ---@return string path
 ---
 local function canonical(path)
-  return vim.uv.fs_realpath(path) or vim.fs.normalize(path)
+  return vim.fs.normalize(vim.uv.fs_realpath(path) or path)
 end
 
 --- Checks whether a path belongs to a project.

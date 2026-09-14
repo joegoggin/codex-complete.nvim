@@ -35,6 +35,10 @@ jobs:
         with:
           version: ${{ matrix.neovim }}
           neovim: true
+      - name: Install ripgrep
+        uses: taiki-e/install-action@v2
+        with:
+          tool: ripgrep
       - name: Install test dependency
         shell: bash
         run: git clone --depth 1 --branch v0.18.0 https://github.com/nvim-mini/mini.nvim.git .deps/mini.nvim
