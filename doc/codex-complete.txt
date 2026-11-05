@@ -31,6 +31,9 @@ The default insert-mode mappings are:
   <M-;>      Accept a suggestion.
   <M-s>      Request a suggestion manually.
 
+To accept a suggestion one word at a time, configure keymaps.accept_word.
+It is unmapped by default. The corresponding Lua function is accept_word().
+
 The default normal-mode mappings are:
 
   <leader>ac  Generate code from the comment under the cursor.

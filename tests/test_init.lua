@@ -71,6 +71,56 @@ T["installs the default mappings"] = function()
   MiniTest.expect.equality(vim.fn.maparg("<M-Tab>", "i"), "")
 end
 
+T["accepts one word at a time and then the remaining suggestion"] = function()
+  plugin.setup({ auto_trigger = false, keymaps = { accept = "<C-q>", accept_word = "<C-a>" } })
+  local captured = context.capture(vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win(), plugin._state.config)
+  plugin._state.engine.callbacks.on_completion(captured, "hello world()")
+
+  vim.fn.maparg("<C-a>", "i", false, true).callback()
+  MiniTest.expect.equality(vim.api.nvim_get_current_line(), "local value = hello")
+  MiniTest.expect.equality(ui.current().completion, " world()")
+  vim.fn.maparg("<C-a>", "i", false, true).callback()
+  MiniTest.expect.equality(vim.api.nvim_get_current_line(), "local value = hello world")
+  MiniTest.expect.equality(ui.current().completion, "()")
+  vim.fn.maparg("<C-q>", "i", false, true).callback()
+  MiniTest.expect.equality(vim.api.nvim_get_current_line(), "local value = hello world()")
+  MiniTest.expect.equality(ui.current(), nil)
+end
+
+T["accepts words without duplicating an existing closing delimiter"] = function()
+  plugin.setup({ auto_trigger = false, keymaps = { accept_word = "<C-a>" } })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "call()" })
+  vim.api.nvim_win_set_cursor(0, { 1, 5 })
+  local captured = context.capture(vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win(), plugin._state.config)
+  plugin._state.engine.callbacks.on_completion(captured, "value) + result")
+
+  vim.fn.maparg("<C-a>", "i", false, true).callback()
+  MiniTest.expect.equality(vim.api.nvim_get_current_line(), "call(value)")
+  MiniTest.expect.equality(ui.current().completion, ") + result")
+  vim.fn.maparg("<C-a>", "i", false, true).callback()
+  MiniTest.expect.equality(vim.api.nvim_get_current_line(), "call(value) + result")
+  MiniTest.expect.equality(ui.current(), nil)
+end
+
+T["accepts a word across a newline and keeps the remainder"] = function()
+  plugin.setup({ auto_trigger = true, debounce_ms = 5000 })
+  local captured = context.capture(vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win(), plugin._state.config)
+  plugin._state.engine.callbacks.on_completion(captured, "\n  next_value + more")
+  MiniTest.expect.equality(plugin.accept_word(), true)
+  MiniTest.expect.equality(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "local value = ", "  next_value" })
+  MiniTest.expect.equality(ui.current().completion, " + more")
+  vim.api.nvim_exec_autocmds("TextChangedI", {})
+  MiniTest.expect.equality(ui.current().completion, " + more")
+end
+
+T["does not accept a stale word suggestion"] = function()
+  local captured = context.capture(vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win(), plugin._state.config)
+  plugin._state.engine.callbacks.on_completion(captured, "hello world")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "changed" })
+  MiniTest.expect.equality(plugin.accept_word(), false)
+  MiniTest.expect.equality(vim.api.nvim_get_current_line(), "changed")
+end
+
 T["comment mappings trigger and accept replacements"] = function()
   plugin.setup({ auto_trigger = false, codex = { command = python_command(), timeout_ms = 5000 } })
   vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = ", "  -- build value", "return value" })

@@ -134,6 +134,48 @@ function M.accept()
   return accepted
 end
 
+function M.accept_word()
+  local visible = ui.current()
+  if not visible or visible.range then
+    return false
+  end
+  if not related.valid(visible.context) then
+    state.cache[visible.context.bufnr] = nil
+    ui.dismiss()
+    return false
+  end
+
+  local completion = visible.completion
+  local word = completion:match("^.-[%a%d_]+") or completion
+  local _, paired = context.reconcile_completion(visible.context, completion)
+  visible.completion = word
+  if paired and #word < paired.closer_index then
+    visible.replace_length = 0
+  end
+  if not ui.accept() then
+    return false
+  end
+
+  local bufnr = visible.context.bufnr
+  local remainder = completion:sub(#word + 1)
+  if remainder == "" then
+    state.cache[bufnr] = nil
+    state.accepted_changedtick[bufnr] = vim.api.nvim_buf_get_changedtick(bufnr)
+  else
+    local captured = context.capture(bufnr, visible.context.winid, state.config)
+    captured.dependencies = visible.context.dependencies
+    local reconciled, paired_delimiter = context.reconcile_completion(captured, remainder)
+    state.cache[bufnr] = { context = captured, completion = reconciled }
+    if reconciled ~= "" then
+      ui.show(captured, reconciled, {
+        paired_delimiter = paired_delimiter,
+        highlights = state.config.highlights,
+      })
+    end
+  end
+  return true
+end
+
 function M.dismiss()
   state.cache[vim.api.nvim_get_current_buf()] = nil
   ui.dismiss()
@@ -661,6 +703,12 @@ function M.setup(options)
       vim.api.nvim_feedkeys(keys, "n", false)
     end
   end, "Accept Codex completion")
+  set_mapping("i", state.config.keymaps.accept_word, function()
+    if not M.accept_word() then
+      local keys = vim.api.nvim_replace_termcodes(state.config.keymaps.accept_word, true, false, true)
+      vim.api.nvim_feedkeys(keys, "n", false)
+    end
+  end, "Accept next Codex completion word")
   set_mapping("i", state.config.keymaps.trigger, function()
     M.trigger({ manual = true })
   end, "Request Codex completion")

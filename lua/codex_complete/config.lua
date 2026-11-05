@@ -33,6 +33,7 @@ local defaults = {
   },
   keymaps = {
     accept = "<M-;>",
+    accept_word = false,
     trigger = "<M-s>",
     comment_trigger = "<leader>ac",
     comment_accept = "<M-;>",
@@ -222,6 +223,7 @@ function M.resolve(opts)
   end
 
   validate_optional_keymap("accept", value.keymaps.accept)
+  validate_optional_keymap("accept_word", value.keymaps.accept_word)
   validate_optional_keymap("trigger", value.keymaps.trigger)
   validate_optional_keymap("comment_trigger", value.keymaps.comment_trigger)
   validate_optional_keymap("comment_accept", value.keymaps.comment_accept)

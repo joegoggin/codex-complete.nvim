@@ -146,6 +146,7 @@ require("codex_complete").setup({
   },
   keymaps = {
     accept = "<M-;>",
+    accept_word = false, -- Set a key to accept one word at a time.
     trigger = "<M-s>",
     comment_trigger = "<leader>ac",
     comment_accept = "<M-;>",
@@ -216,7 +217,8 @@ advertised default. Model and effort changes cancel and clear older suggestions.
 | `:CodexCompleteEffort!` | `reset_effort()` | Restore the configured default effort |
 
 `accept()` inserts a visible completion or applies a visible comment
-replacement, while `status()` returns current
+replacement. `accept_word()` inserts the next word of an inline completion,
+leaving the rest visible. `status()` returns current
 plugin, process, request, model, reasoning-effort, loading-indicator, and error
 state.
 `list_models(callback)` retrieves the visible Codex model catalog and calls
