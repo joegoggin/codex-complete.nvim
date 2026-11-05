@@ -5,6 +5,9 @@ import json
 import sys
 import time
 
+if sys.argv[-1] != "app-server":
+    sys.exit("Expected app-server without additional arguments")
+
 
 def send(message):
     sys.stdout.write(json.dumps(message) + "\n")

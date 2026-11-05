@@ -8,7 +8,7 @@ local function command_argv(command)
   else
     argv = { command }
   end
-  vim.list_extend(argv, { "app-server", "--stdio" })
+  vim.list_extend(argv, { "app-server" })
   return argv
 end
 

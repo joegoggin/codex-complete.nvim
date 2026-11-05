@@ -17,6 +17,13 @@ local keywords = {
   ["self"] = true,
 }
 
+local function client_call(client, method, ...)
+  if vim.fn.has("nvim-0.11") == 1 then
+    return client[method](client, ...)
+  end
+  return client[method](...)
+end
+
 --- Resolves a canonical file path.
 ---
 ---@param path string
@@ -197,7 +204,7 @@ function M.collect(captured, config, callback)
       process = nil
     end
     for _, request in ipairs(requests) do
-      request.client.cancel_request(request.id)
+      client_call(request.client, "cancel_request", request.id)
     end
   end
 
@@ -353,7 +360,7 @@ function M.collect(captured, config, callback)
     end
   end
   for _, client in ipairs(vim.lsp.get_clients({ bufnr = captured.bufnr })) do
-    if client.supports_method("textDocument/definition") then
+    if client_call(client, "supports_method", "textDocument/definition") then
       for _, candidate in ipairs(candidates) do
         local line = lines[candidate.row - first + 1]
         local character = candidate.col
@@ -362,7 +369,7 @@ function M.collect(captured, config, callback)
           character = client.offset_encoding == "utf-32" and utf32 or utf16
         end
         pending = pending + 1
-        local ok, id = client.request("textDocument/definition", {
+        local ok, id = client_call(client, "request", "textDocument/definition", {
           textDocument = { uri = vim.uri_from_bufnr(captured.bufnr) },
           position = { line = candidate.row, character = character },
         }, function(err, result)

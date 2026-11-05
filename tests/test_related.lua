@@ -142,14 +142,27 @@ T["normalizes LSP links and encoded positions"] = function()
   local original = vim.lsp.get_clients
   local position
   local root = vim.fs.normalize(vim.fn.getcwd() .. "/tests/fixtures/related")
+  local modern = vim.fn.has("nvim-0.11") == 1
   local client = {
     config = { root_dir = root },
     offset_encoding = "utf-16",
-    supports_method = function()
+    supports_method = function(self, method)
+      if modern then
+        MiniTest.expect.equality(self.offset_encoding, "utf-16")
+      else
+        method = self
+      end
+      MiniTest.expect.equality(method, "textDocument/definition")
       return true
     end,
     cancel_request = function() end,
-    request = function(_, params, callback)
+    request = function(self, method, params, callback)
+      if modern then
+        MiniTest.expect.equality(self.offset_encoding, "utf-16")
+      else
+        callback, params, method = params, method, self
+      end
+      MiniTest.expect.equality(method, "textDocument/definition")
       position = params.position
       callback(nil, {
         {
@@ -202,6 +215,8 @@ T["times out and excludes sensitive sources"] = function()
   options.context.related.timeout_ms = 10
   options.sensitive_patterns = { "types", "main" }
   local original = vim.lsp.get_clients
+  local modern = vim.fn.has("nvim-0.11") == 1
+  local cancelled
   local reply
   vim.lsp.get_clients = function()
     return {
@@ -211,8 +226,18 @@ T["times out and excludes sensitive sources"] = function()
         supports_method = function()
           return true
         end,
-        cancel_request = function() end,
-        request = function(_, _, callback)
+        cancel_request = function(self, id)
+          if modern then
+            MiniTest.expect.equality(self.offset_encoding, "utf-8")
+          else
+            id = self
+          end
+          cancelled = id
+        end,
+        request = function(self, method, params, callback)
+          if not modern then
+            callback = params
+          end
           reply = callback
           return true, 1
         end,
@@ -233,6 +258,7 @@ T["times out and excludes sensitive sources"] = function()
     end),
     true
   )
+  MiniTest.expect.equality(cancelled, 1)
   local before = vim.json.encode(captured.related)
   reply(nil, {
     uri = vim.uri_from_fname(vim.fn.getcwd() .. "/tests/fixtures/related/types.rs"),
